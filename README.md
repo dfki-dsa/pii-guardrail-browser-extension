@@ -14,7 +14,7 @@
 
 Privacy Guardrail is a Manifest V3 Chrome extension that detects personally identifiable information (PII) before text is pasted into supported LLM chat apps. Detection runs **entirely on your device**: deterministic recognizers compiled from Rust to WebAssembly, plus optional transformer NER through ONNX Runtime Web. No pasted text leaves the browser, and the project has no telemetry.
 
-Developed at the [German Research Center for Artificial Intelligence (DFKI)](https://www.dfki.de/), Data Science and its Applications research group.
+Developed at the [German Research Center for Artificial Intelligence (DFKI)](https://www.dfki.de/), Data Science and its Applications research department.
 
 > **Status — public beta (`0.2.0`).** Detection is assistive: it helps you catch personal data before it leaves your machine, but it will not catch everything and is not a compliance or DLP product. See [Known limitations](#known-limitations).
 
@@ -144,7 +144,7 @@ Directional themes — none are commitments, and order may change with evidence 
   <img alt="DSA — Data Science and its Applications" src="docs/assets/dsa-logo.png" height="120">
 </a></td>
 <td>
-Privacy Guardrail is developed in the <a href="https://www.dfki.de/web/forschung/forschungsbereiche/data-science-und-ihre-anwendungen">Data Science and its Applications research group</a> at the <a href="https://www.dfki.de/">German Research Center for Artificial Intelligence (DFKI)</a>.</td></tr></table>
+Privacy Guardrail is developed in the <a href="https://www.dfki.de/web/forschung/forschungsbereiche/data-science-und-ihre-anwendungen">Data Science and its Applications research department</a> at the <a href="https://www.dfki.de/">German Research Center for Artificial Intelligence (DFKI)</a>.</td></tr></table>
 
 ### Contributors
 
