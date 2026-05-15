@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible product bug in the public beta.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Privacy Guardrail.
+
+        Do not paste real personal data, secrets, private prompts, model responses, private documents, screenshots with account details, or confidential logs. Use synthetic or sanitized examples only.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: dropdown
+    id: site
+    attributes:
+      label: Supported site
+      description: Where did this happen?
+      options:
+        - chatgpt.com
+        - chat.openai.com
+        - claude.ai
+        - gemini.google.com
+        - Not site-specific
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Chrome version
+      description: Use Chrome desktop stable version information when possible.
+      placeholder: "Chrome 125.0.0000.00"
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal reproduction using synthetic or sanitized text.
+      placeholder: |
+        1. Open ...
+        2. Paste synthetic text ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy-confirmation
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed real personal data, secrets, private prompts, model responses, and private documents from this report.
+          required: true

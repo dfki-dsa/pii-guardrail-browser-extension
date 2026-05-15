@@ -1,0 +1,67 @@
+name: Site compatibility report
+description: Report beta support behavior on ChatGPT, Claude, or Gemini in Chrome desktop stable.
+title: "[Site compatibility]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Public beta support is limited to Chrome desktop stable on ChatGPT, Claude, and Gemini:
+
+        - chatgpt.com
+        - chat.openai.com
+        - claude.ai
+        - gemini.google.com
+
+        Do not paste real personal data, secrets, private prompts, model responses, private documents, screenshots with account details, or confidential logs. Use synthetic or sanitized examples only.
+  - type: dropdown
+    id: site
+    attributes:
+      label: Supported site
+      options:
+        - chatgpt.com
+        - chat.openai.com
+        - claude.ai
+        - gemini.google.com
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Chrome desktop stable version
+      placeholder: "Chrome 125.0.0000.00"
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Compatibility behavior
+      description: What did the extension do or fail to do on the supported site?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use only synthetic or sanitized input.
+      placeholder: |
+        1. Open ...
+        2. Paste synthetic text ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I tested on Chrome desktop stable.
+          required: true
+        - label: I used only synthetic or sanitized examples and did not include real personal data, secrets, private prompts, responses, or documents.
+          required: true

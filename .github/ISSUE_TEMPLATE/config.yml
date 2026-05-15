@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security or privacy-sensitive report
+    url: https://github.com/dfki-dsa/pii-guardrail-browser-extension/blob/main/SECURITY.md
+    about: Please do not open a public issue for sensitive vulnerability or privacy reports.
+  - name: Support guidance
+    url: https://github.com/dfki-dsa/pii-guardrail-browser-extension/blob/main/SUPPORT.md
+    about: Read support options and safe reporting guidance.

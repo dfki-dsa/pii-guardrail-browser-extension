@@ -1,0 +1,34 @@
+name: Docs issue
+description: Report unclear, missing, or incorrect public documentation.
+title: "[Docs]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste real personal data, secrets, private prompts, model responses, private documents, or confidential logs. Use synthetic or sanitized examples only.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Documentation problem
+      description: What is unclear, missing, stale, or incorrect?
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Page or section
+      placeholder: "README.md, docs/user/..., or URL"
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested change
+      description: Optional. Use sanitized examples only.
+  - type: checkboxes
+    id: privacy-confirmation
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed real personal data, secrets, private prompts, model responses, and private documents from this report.
+          required: true

@@ -1,0 +1,62 @@
+name: False positive
+description: Report synthetic or sanitized text that Privacy Guardrail flagged incorrectly.
+title: "[False positive]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic or sanitized examples only. Do not paste real personal data, secrets, private prompts, model responses, private documents, screenshots with account details, or confidential logs.
+  - type: dropdown
+    id: site
+    attributes:
+      label: Supported site
+      options:
+        - chatgpt.com
+        - chat.openai.com
+        - claude.ai
+        - gemini.google.com
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Chrome version
+      placeholder: "Chrome 125.0.0000.00"
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: textarea
+    id: synthetic-input
+    attributes:
+      label: Synthetic or sanitized input
+      description: Provide the shortest safe sample that reproduces the incorrect detection.
+      placeholder: "Example: The project code name is Beacon Hill."
+    validations:
+      required: true
+  - type: textarea
+    id: incorrect-detection
+    attributes:
+      label: Incorrect detection
+      description: Which span or category was flagged incorrectly?
+    validations:
+      required: true
+  - type: textarea
+    id: local-ai-state
+    attributes:
+      label: Local AI state
+      description: Was Local AI on, off, unavailable, degraded, or failed?
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy-confirmation
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: This report uses only synthetic or sanitized examples and contains no real personal data, secrets, private prompts, responses, or documents.
+          required: true

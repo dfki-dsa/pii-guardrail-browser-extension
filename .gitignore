@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+.node_modules/
+
+# Build output
+dist/
+coverage/
+generated/
+.model-sources/
+# One-shot scratch dirs (e.g. optimum-cli ONNX exports staged for the prep script)
+tmp/
+# Packaged extension archives produced for manual install
+privacy-guardrail-*.zip
+release/*.zip
+release/*.sha256
+
+# Rust and WebAssembly artifacts
+crate/target/
+crate/pkg/
+*.wasm
+*.pdb
+**/*.rs.bk
+
+# Test and tool output
+.eslintcache
+*.actual
+TEST-results.xml
+test-args.txt
+*.log
+*v8.log
+benchmarks/cache/
+benchmarks/corpora/
+benchmarks/results*.json
+benchmarks/comparison*.md
+tests-local/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+**/.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+
+# Local assistant metadata
+.agents/
+.claude/
+skills-lock.json
+
+# Local-only launch planning and private drafts
+.private-docs/
+docs/issues/
+docs/*.md
+docs/release/public-initial-commit.md
+
+# Chrome Web Store screenshot staging — reviewed PNGs stay out of Git by default
+screenshots/

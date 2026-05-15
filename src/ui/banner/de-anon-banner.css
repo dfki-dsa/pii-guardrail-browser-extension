@@ -1,0 +1,35 @@
+/* De-anonymization banner styles */
+.pg-deanon-banner {
+  background: #2d2d44;
+  color: #e0e0e0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 8px;
+  font-family: system-ui, -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pg-deanon-banner button {
+  background: #4a4a6a;
+  color: #fff;
+  border: none;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.pg-deanon-banner button:hover {
+  background: #5a5a8a;
+}
+
+.pg-deanon-overlay {
+  white-space: pre-wrap;
+  padding: 8px;
+  background: rgba(34, 197, 94, 0.05);
+  border-radius: 4px;
+}

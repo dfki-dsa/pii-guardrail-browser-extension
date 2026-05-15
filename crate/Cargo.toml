@@ -1,0 +1,25 @@
+[package]
+name = "privacy-guardrail-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM-based PII detection engine for the Privacy Guardrail browser extension"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.118"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+js-sys = "0.3"
+
+# tract for ONNX inference (Phase 2 — stubbed for now)
+# tract-onnx = { version = "0.21", default-features = false }
+
+[dev-dependencies]
+wasm-bindgen-test = "=0.3.68"
+
+[profile.release]
+opt-level = "s"
+lto = true

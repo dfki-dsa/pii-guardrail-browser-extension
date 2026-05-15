@@ -1,0 +1,36 @@
+name: Question
+description: Ask a public beta usage or project question.
+title: "[Question]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste real personal data, secrets, private prompts, model responses, private documents, screenshots with account details, or confidential logs.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Installation
+        - Supported sites
+        - Local AI
+        - Local data
+        - Reporting issues safely
+        - Development
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy-confirmation
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed real personal data, secrets, private prompts, model responses, and private documents from this question.
+          required: true

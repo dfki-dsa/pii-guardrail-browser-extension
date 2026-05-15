@@ -1,0 +1,89 @@
+{
+  "manifest_version": 3,
+  "name": "Privacy Guardrail",
+  "version": "0.2.0",
+  "description": "Automatically anonymizes personal data in text before pasting into LLM chat interfaces. All processing runs locally in your browser.",
+  "permissions": [
+    "storage",
+    "offscreen",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "content/content-script.js"
+      ],
+      "css": [
+        "ui/banner/de-anon-banner.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "content/clipboard-interceptor-page.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "options_page": "options/options.html",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/dark-16.png",
+      "32": "assets/icons/inactive-32.png",
+      "48": "assets/icons/dark-48.png",
+      "128": "assets/icons/dark-128.png"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "wasm/*.wasm",
+        "offscreen/offscreen.html",
+        "models/ner/hikmaai-distilbert-pii/*",
+        "models/ner/hikmaai-distilbert-pii/onnx/*",
+        "models/ner/bardsai-eu-pii-anonimization-multilang/*",
+        "models/ner/bardsai-eu-pii-anonimization-multilang/onnx/*",
+        "vendor/onnxruntime-web/*"
+      ],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

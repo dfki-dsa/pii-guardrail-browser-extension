@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a small, privacy-preserving improvement.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real personal data, secrets, private prompts, model responses, private documents, or confidential logs.
+
+        Features that upload user content, telemetry, analytics, feedback logs, identity maps, vault data, prompts, responses, detected entities, or model inputs are out of scope by policy.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: What user workflow would this improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful version of the feature.
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Supported beta scope
+      description: Which supported beta target does this affect?
+      options:
+        - Chrome desktop stable
+        - ChatGPT
+        - Claude
+        - Gemini
+        - Local extension UI
+        - Documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy-confirmation
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: This request does not require automatic upload of user content, telemetry, analytics, or feedback data.
+          required: true
