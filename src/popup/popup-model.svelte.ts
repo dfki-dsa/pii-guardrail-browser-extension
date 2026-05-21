@@ -481,7 +481,7 @@ function formatTimings(timings?: Timings): string {
   if (timings.nerMs !== undefined) return ` in ${timings.totalMs}ms (NER ${timings.nerMs}ms)`;
   return ` in ${timings.totalMs}ms`;
 }
-function formatNoPii(timings?: Timings): string { return `No PII detected${formatTimings(timings)}.`; }
+function formatNoPii(timings?: Timings): string { return `No obvious PII detected${formatTimings(timings)}. Review before sending — detection can miss things.`; }
 function formatResults(spans: PiiSpan[], timings?: Timings): string {
   let output = `Found ${spans.length} PII span(s)${formatTimings(timings)}:\n\n`;
   for (const span of spans) {

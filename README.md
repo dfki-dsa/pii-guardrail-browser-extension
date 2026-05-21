@@ -81,6 +81,7 @@ No pasted text is sent to a remote inference service. There is no telemetry or a
 - [Security reporting](SECURITY.md)
 - [Support](SUPPORT.md)
 - [Changelog](CHANGELOG.md)
+- [Impressum / Legal notice](IMPRESSUM.md)
 
 ### Project
 

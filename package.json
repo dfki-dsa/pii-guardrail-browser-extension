@@ -1,6 +1,6 @@
 {
   "name": "privacy-guardrail",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Chrome extension that anonymizes PII before pasting into LLM chats",
   "scripts": {

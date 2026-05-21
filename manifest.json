@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Privacy Guardrail",
-  "version": "0.2.0",
-  "description": "Automatically anonymizes personal data in text before pasting into LLM chat interfaces. All processing runs locally in your browser.",
+  "version": "0.2.1",
+  "description": "Helps you review and replace personal data in text before pasting it into LLM chat interfaces. Assistive, not a guarantee. All processing runs locally in your browser.",
   "permissions": [
     "storage",
     "offscreen",

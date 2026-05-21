@@ -4,6 +4,11 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
+## [0.2.1] - Public Beta
+
+- Reframed extension description and popup messaging
+- Added Impressum / legal notice link to README
+
 ## [0.2.0] - Public Beta
 
 Initial public beta placeholder.
