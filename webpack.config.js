@@ -12,20 +12,38 @@ module.exports = (_env = {}) => {
   const requirePreparedModel =
     process.env.NER_MODEL_ASSETS_REQUIRED === '1' || _env.requireNerModelAssets === true;
 
+  const browser = process.env.BROWSER || 'chrome';
+  const isFirefox = browser === 'firefox';
+  const outputDir = isFirefox ? 'dist-firefox' : 'dist';
+  const manifestSource = isFirefox ? 'manifest.firefox.json' : 'manifest.json';
+
+  const chromeOnlyEntries = {
+    'offscreen/offscreen': './src/offscreen/offscreen.ts',
+    'system-check/system-check-offscreen': './src/system-check/system-check-offscreen.ts',
+  };
+
   return {
     entry: {
-      'background/service-worker': './src/background/service-worker.ts',
+      ...(isFirefox
+        ? { 'background/background': './src/background/background.firefox.ts' }
+        : { 'background/service-worker': './src/background/service-worker.ts', ...chromeOnlyEntries }
+      ),
       'content/content-script': './src/content/content-script.ts',
       'content/clipboard-interceptor-page': './src/content/clipboard-interceptor-page.ts',
-      'offscreen/offscreen': './src/offscreen/offscreen.ts',
-      'system-check/system-check-offscreen': './src/system-check/system-check-offscreen.ts',
+      ...(isFirefox
+        ? { 'content/clipboard-interceptor-injector': './src/content/clipboard-interceptor-injector.ts' }
+        : {}
+      ),
       'popup/popup': './src/popup/popup.ts',
       'options/options': './src/options/options.ts',
     },
 
     output: {
-      path: path.resolve(__dirname, 'dist'),
+      path: path.resolve(__dirname, outputDir),
       filename: '[name].js',
+      // Firefox MV2 background pages can't auto-detect the public path from
+      // document.currentScript, so we pin it to the extension root explicitly.
+      publicPath: isFirefox ? '/' : 'auto',
       clean: true,
     },
 
@@ -88,7 +106,7 @@ module.exports = (_env = {}) => {
       // Copy static files to dist/
       new CopyPlugin({
         patterns: [
-          { from: 'manifest.json', to: '.' },
+          { from: manifestSource, to: 'manifest.json' },
           { from: 'src/assets', to: 'assets' },
           { from: 'src/assets/fonts', to: 'fonts' },
           { from: 'src/ui/banner/de-anon-banner.css', to: 'ui/banner/' },
@@ -116,19 +134,19 @@ module.exports = (_env = {}) => {
         chunks: ['options/options'],
       }),
 
-      // Offscreen HTML
-      new HtmlWebpackPlugin({
-        template: 'src/offscreen/offscreen.html',
-        filename: 'offscreen/offscreen.html',
-        chunks: ['offscreen/offscreen'],
-      }),
-
-      // Lightweight passive system-check offscreen HTML
-      new HtmlWebpackPlugin({
-        template: 'src/system-check/system-check-offscreen.html',
-        filename: 'system-check/system-check-offscreen.html',
-        chunks: ['system-check/system-check-offscreen'],
-      }),
+      // Offscreen HTML — Chrome only (Firefox has no offscreen API)
+      ...(!isFirefox ? [
+        new HtmlWebpackPlugin({
+          template: 'src/offscreen/offscreen.html',
+          filename: 'offscreen/offscreen.html',
+          chunks: ['offscreen/offscreen'],
+        }),
+        new HtmlWebpackPlugin({
+          template: 'src/system-check/system-check-offscreen.html',
+          filename: 'system-check/system-check-offscreen.html',
+          chunks: ['system-check/system-check-offscreen'],
+        }),
+      ] : []),
     ],
 
     // Chrome extensions require specific settings

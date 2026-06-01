@@ -1,0 +1,78 @@
+{
+  "manifest_version": 2,
+  "name": "Privacy Guardrail",
+  "version": "0.2.3",
+  "description": "Review and replace personal data in text before pasting into LLM chats. Runs locally in your browser. Assistive only.",
+  "browser_specific_settings": {
+    "gecko": {
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*"
+  ],
+  "background": {
+    "scripts": ["background/background.js"],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "content/content-script.js"
+      ],
+      "css": [
+        "ui/banner/de-anon-banner.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "content/clipboard-interceptor-injector.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "options_page": "options/options.html",
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/dark-16.png",
+      "32": "assets/icons/inactive-32.png",
+      "48": "assets/icons/dark-48.png",
+      "128": "assets/icons/dark-128.png"
+    }
+  },
+  "web_accessible_resources": [
+    "wasm/*.wasm",
+    "content/clipboard-interceptor-page.js",
+    "models/ner/hikmaai-distilbert-pii/*",
+    "models/ner/hikmaai-distilbert-pii/onnx/*",
+    "models/ner/bardsai-eu-pii-anonimization-multilang/*",
+    "models/ner/bardsai-eu-pii-anonimization-multilang/onnx/*",
+    "vendor/onnxruntime-web/*"
+  ],
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+}

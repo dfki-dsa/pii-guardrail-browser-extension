@@ -117,7 +117,7 @@ export function normalizeSystemCheckResult(raw: unknown): SystemCheckResult | nu
 }
 
 export async function loadSystemCheckResult(): Promise<SystemCheckResult | null> {
-  const result = await chrome.storage.local.get(SYSTEM_CHECK_STORAGE_KEY);
+  const result = await chrome.storage.local.get(SYSTEM_CHECK_STORAGE_KEY) ?? {};
   return normalizeSystemCheckResult(result[SYSTEM_CHECK_STORAGE_KEY]);
 }
 
