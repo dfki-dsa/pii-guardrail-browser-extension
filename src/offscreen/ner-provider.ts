@@ -535,7 +535,11 @@ async function defaultAssetExists(url: string): Promise<boolean> {
   }
 
   try {
-    const response = await fetch(url, { method: 'HEAD' });
+    // Firefox does not reliably return 404 for HEAD requests to missing
+    // moz-extension:// resources — use GET instead. Extension resources
+    // are served locally so the extra body data is negligible.
+    const method = url.startsWith('moz-extension://') ? 'GET' : 'HEAD';
+    const response = await fetch(url, { method });
     return response.ok;
   } catch {
     return false;
