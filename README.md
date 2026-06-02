@@ -53,8 +53,7 @@ For an unpacked developer install, see [`docs/developer/building.md`](docs/devel
 - Without WebGPU, Local AI falls back to CPU/WASM execution (slower but functional).
 - Pattern-only detection runs on any supported Chrome system regardless of memory or WebGPU.
 
-These requirements are high because Local AI runs a transformer NER model entirely in the browser.
-Lowering them is an active roadmap item.
+These requirements are high because Local AI runs a transformer NER model entirely in the browser. Lowering them is an active roadmap item.
 
 ## How it works
 
