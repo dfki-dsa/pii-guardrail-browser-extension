@@ -12,6 +12,8 @@ import type {
 } from "../shared/message-types";
 import { loadSettings, saveSettings, logFeedback } from "../shared/storage";
 import { detectionOptionsFromSettings, fallbackNerStatus } from "../shared/detection-config";
+import { LOCAL_AI_ACTIVITY_WINDOW_MS } from "../shared/constants";
+import { shouldAutoWarmLocalAi } from "../shared/local-ai-warmup-gate";
 import {
   buildSystemCheckResult,
   loadSystemCheckResult,
@@ -50,9 +52,21 @@ let offscreenCreating: Promise<void> | null = null;
  */
 let offscreenReady: Promise<void> | null = null;
 const canceledDetectionIds = new Set<string>();
+let offscreenBusyCount = 0;
+let offscreenIdleTimer: ReturnType<typeof setTimeout> | null = null;
+let lastOffscreenActivityAt = 0;
+let lastSupportedPageActivityAt = 0;
+let lastSupportedPageActivityTabId: number | null = null;
+let activityWarmupInFlight: Promise<void> | null = null;
 
 function invalidateOffscreenReady(): void {
   offscreenReady = null;
+}
+
+function clearOffscreenIdleTimer(): void {
+  if (!offscreenIdleTimer) return;
+  clearTimeout(offscreenIdleTimer);
+  offscreenIdleTimer = null;
 }
 
 function canceledResponse(requestId: string): DetectionCanceledResponse {
@@ -74,6 +88,7 @@ function timeout(ms: number): Promise<never> {
 }
 
 async function closeOffscreenBestEffort(): Promise<void> {
+  clearOffscreenIdleTimer();
   try {
     const existing = await (chrome.offscreen as any).hasDocument();
     if (existing) {
@@ -83,6 +98,63 @@ async function closeOffscreenBestEffort(): Promise<void> {
     // Best effort: Chrome may already have torn down the document.
   } finally {
     invalidateOffscreenReady();
+  }
+}
+
+function isSupportedPageUrl(url: string | undefined, settings: Awaited<ReturnType<typeof loadSettings>>): boolean {
+  return Boolean(url && settings.curatedUrls.some((curatedUrl) => url.startsWith(curatedUrl)));
+}
+
+async function hasRecentForegroundSupportedPageActivity(settings: Awaited<ReturnType<typeof loadSettings>>): Promise<boolean> {
+  if (!settings.keepLocalAiLoadedWhileActive) return false;
+  if (!lastSupportedPageActivityTabId) return false;
+  if (Date.now() - lastSupportedPageActivityAt > LOCAL_AI_ACTIVITY_WINDOW_MS) return false;
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return Boolean(
+    activeTab?.id === lastSupportedPageActivityTabId
+    && isSupportedPageUrl(activeTab.url, settings),
+  );
+}
+
+async function scheduleOffscreenIdleUnload(): Promise<void> {
+  clearOffscreenIdleTimer();
+  if (offscreenBusyCount > 0) return;
+
+  const settings = await loadSettings();
+  if (settings.localAiUnloadTimeoutMs === null) return;
+
+  const existing = await (chrome.offscreen as any).hasDocument();
+  if (!existing) return;
+
+  const activePageKeepsRuntime = await hasRecentForegroundSupportedPageActivity(settings);
+  const lastRelevantActivityAt = Math.max(
+    lastOffscreenActivityAt,
+    activePageKeepsRuntime ? lastSupportedPageActivityAt : 0,
+  );
+  const elapsedMs = Date.now() - lastRelevantActivityAt;
+  const remainingMs = Math.max(0, settings.localAiUnloadTimeoutMs - elapsedMs);
+
+  if (remainingMs === 0) {
+    await closeOffscreenBestEffort();
+    return;
+  }
+
+  offscreenIdleTimer = setTimeout(() => {
+    void scheduleOffscreenIdleUnload();
+  }, remainingMs);
+}
+
+async function withOffscreenOperation<T>(operation: () => Promise<T>): Promise<T> {
+  clearOffscreenIdleTimer();
+  offscreenBusyCount += 1;
+  try {
+    await ensureOffscreen();
+    return await operation();
+  } finally {
+    offscreenBusyCount = Math.max(0, offscreenBusyCount - 1);
+    lastOffscreenActivityAt = Date.now();
+    void scheduleOffscreenIdleUnload();
   }
 }
 
@@ -107,6 +179,7 @@ async function applyCriticalLocalAiRecommendation(result: SystemCheckResult): Pr
   const settings = await loadSettings();
   if (settings.nerProvider === "transformers") {
     await saveSettings({ nerProvider: "off" });
+    await closeOffscreenBestEffort();
     return recordLowMemoryAutoDisable(result);
   }
 
@@ -184,6 +257,69 @@ async function persistResolvedNerModel(config: DetectPiiRequest["payload"]["conf
     // Best effort only. Detection already succeeded; a future popup/status
     // refresh can still display the resolved offscreen status.
   }
+}
+
+async function warmUpLocalAiFromActivity(settings: Awaited<ReturnType<typeof loadSettings>>): Promise<void> {
+  if (!settings.autoWarmLocalAiOnActiveSupportedPage || activityWarmupInFlight) return;
+
+  const systemStatus = (await ensureSystemCheckResult()).payload;
+  if (!shouldAutoWarmLocalAi(settings, systemStatus, null)) return;
+
+  activityWarmupInFlight = (async () => {
+    const config = detectionOptionsFromSettings(settings);
+    try {
+      await withOffscreenOperation(async () => {
+        await chrome.runtime.sendMessage({
+          type: "DETECT_PII",
+          payload: {
+            requestId: `local-ai-active-page-warmup-${Date.now()}`,
+            text: "Alice from Acme visited Berlin.",
+            config,
+          },
+        } satisfies DetectPiiRequest);
+        const status: NerStatusResponse = await chrome.runtime.sendMessage({ type: "GET_NER_STATUS", payload: { config } });
+        await persistWarmupOutcome(status.payload);
+      });
+    } catch (err) {
+      const fallback = fallbackNerStatus(
+        config.ner_provider ?? settings.nerProvider,
+        err instanceof Error ? err.message : String(err),
+      );
+      await persistWarmupOutcome(fallback);
+    } finally {
+      activityWarmupInFlight = null;
+    }
+  })();
+
+  await activityWarmupInFlight;
+}
+
+async function recordSupportedPageActivity(
+  sender: chrome.runtime.MessageSender,
+  visible: boolean,
+): Promise<void> {
+  const tabId = sender.tab?.id;
+  if (typeof tabId !== "number") return;
+
+  if (!visible) {
+    if (lastSupportedPageActivityTabId === tabId) {
+      lastSupportedPageActivityTabId = null;
+    }
+    void scheduleOffscreenIdleUnload();
+    return;
+  }
+
+  const settings = await loadSettings();
+  if (!settings.enabled || settings.nerProvider === "off") return;
+  if (!isSupportedPageUrl(sender.tab?.url, settings)) return;
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (activeTab?.id !== tabId) return;
+
+  lastSupportedPageActivityAt = Date.now();
+  lastSupportedPageActivityTabId = tabId;
+  void scheduleOffscreenIdleUnload();
+  void warmUpLocalAiFromActivity(settings);
 }
 
 /**
@@ -273,6 +409,7 @@ function isBackgroundRequest(message: Message): boolean {
     || message.type === "GET_SYSTEM_COMPATIBILITY_STATUS"
     || message.type === "SET_LOCAL_AI_DETECTION"
     || message.type === "WARM_UP_LOCAL_AI"
+    || message.type === "SUPPORTED_PAGE_ACTIVITY"
     || message.type === "DISMISS_CRITICAL_LOCAL_AI_MODAL"
     || message.type === "RE_RUN_SYSTEM_CHECK"
     || message.type === "APPLY_CRITICAL_RECOMMENDATION";
@@ -291,15 +428,17 @@ async function handleMessage(
         ...message,
         payload: { ...message.payload, config },
       };
-      await ensureOffscreen();
       // Forward to offscreen document and relay response back. If explicit
       // cancellation force-closes the offscreen document, translate the broken
       // message channel back into a normal cancellation response.
       try {
-        const response = await chrome.runtime.sendMessage(request);
-        if ((response as PiiResultResponse | undefined)?.type === "PII_RESULT") {
-          await persistResolvedNerModel(config);
-        }
+        const response = await withOffscreenOperation(async () => {
+          const forwardedResponse = await chrome.runtime.sendMessage(request);
+          if ((forwardedResponse as PiiResultResponse | undefined)?.type === "PII_RESULT") {
+            await persistResolvedNerModel(config);
+          }
+          return forwardedResponse;
+        });
         sendResponse(response);
       } catch (err) {
         if (canceledDetectionIds.delete(message.payload.requestId)) {
@@ -338,9 +477,8 @@ async function handleMessage(
         type: "GET_NER_STATUS",
         payload: { config },
       };
-      await ensureOffscreen();
       try {
-        const response: NerStatusResponse = await chrome.runtime.sendMessage(request);
+        const response: NerStatusResponse = await withOffscreenOperation(() => chrome.runtime.sendMessage(request));
         sendResponse(response);
       } catch (err) {
         sendResponse({
@@ -391,17 +529,18 @@ async function handleMessage(
         break;
       }
 
-      await ensureOffscreen();
       try {
-        await chrome.runtime.sendMessage({
-          type: "DETECT_PII",
-          payload: {
-            requestId: `local-ai-warmup-${Date.now()}`,
-            text: "Alice from Acme visited Berlin.",
-            config,
-          },
-        } satisfies DetectPiiRequest);
-        const status: NerStatusResponse = await chrome.runtime.sendMessage({ type: "GET_NER_STATUS", payload: { config } });
+        const status: NerStatusResponse = await withOffscreenOperation(async () => {
+          await chrome.runtime.sendMessage({
+            type: "DETECT_PII",
+            payload: {
+              requestId: `local-ai-warmup-${Date.now()}`,
+              text: "Alice from Acme visited Berlin.",
+              config,
+            },
+          } satisfies DetectPiiRequest);
+          return chrome.runtime.sendMessage({ type: "GET_NER_STATUS", payload: { config } });
+        });
         await persistWarmupOutcome(status.payload);
         sendResponse(status);
       } catch (err) {
@@ -412,6 +551,12 @@ async function handleMessage(
         await persistWarmupOutcome(fallback);
         sendResponse({ type: "NER_STATUS", payload: fallback } satisfies NerStatusResponse);
       }
+      break;
+    }
+
+    case "SUPPORTED_PAGE_ACTIVITY": {
+      await recordSupportedPageActivity(sender, message.payload.visible);
+      sendResponse({ ok: true });
       break;
     }
 
@@ -446,6 +591,7 @@ async function handleMessage(
         if (settings.nerProvider === "transformers") {
           await saveSettings({ nerProvider: "off" });
         }
+        await closeOffscreenBestEffort();
         const updated = await recordLowMemoryAutoDisable(current);
         sendResponse({ type: "SYSTEM_COMPATIBILITY_STATUS", payload: updated } satisfies SystemCompatibilityStatusResponse);
       } else {
@@ -474,6 +620,7 @@ async function handleMessage(
         sendResponse({ type: "SYSTEM_COMPATIBILITY_STATUS", payload: updated ?? response.payload } satisfies SystemCompatibilityStatusResponse);
       } else {
         await saveSettings({ nerProvider: "off" });
+        await closeOffscreenBestEffort();
         const current = await loadSystemCheckResult();
         const updated = current ? await recordUserLocalAiOff(current) : response.payload;
         sendResponse({ type: "SYSTEM_COMPATIBILITY_STATUS", payload: updated } satisfies SystemCompatibilityStatusResponse);
@@ -502,6 +649,10 @@ chrome.runtime.onStartup.addListener(() => {
 /** Update icon based on active tab URL. */
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   try {
+    if (lastSupportedPageActivityTabId !== activeInfo.tabId) {
+      lastSupportedPageActivityTabId = null;
+      void scheduleOffscreenIdleUnload();
+    }
     const tab = await chrome.tabs.get(activeInfo.tabId);
     await updateIcon(tab);
   } catch {
@@ -510,11 +661,24 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
+  if (typeof tab.id === "number" && tab.id === lastSupportedPageActivityTabId) {
+    const settings = await loadSettings();
+    if (!isSupportedPageUrl(tab.url, settings)) {
+      lastSupportedPageActivityTabId = null;
+      void scheduleOffscreenIdleUnload();
+    }
+  }
   await updateIcon(tab);
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && changes[SETTINGS_KEY]) {
+    const nextSettings = changes[SETTINGS_KEY].newValue;
+    if (nextSettings?.nerProvider === "off") {
+      void closeOffscreenBestEffort();
+    } else {
+      void scheduleOffscreenIdleUnload();
+    }
     void updateActiveTabIcon();
   }
 });

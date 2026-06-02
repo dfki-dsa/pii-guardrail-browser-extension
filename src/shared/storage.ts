@@ -1,6 +1,6 @@
-import type { Settings, FeedbackEntry, NerModelKey, NerProviderMode, GroupName, AllowlistEntry, BlocklistEntry, CancelDetectionBehavior } from './message-types';
+import type { Settings, FeedbackEntry, NerModelKey, NerProviderMode, GroupName, AllowlistEntry, BlocklistEntry, CancelDetectionBehavior, LocalAiUnloadTimeoutMs } from './message-types';
 import { ENTITY_TYPES } from './message-types';
-import { DEFAULT_SETTINGS, runtimeNerModelKey } from './constants';
+import { DEFAULT_SETTINGS, LOCAL_AI_UNLOAD_TIMEOUT_CHOICES, runtimeNerModelKey } from './constants';
 import { GROUP_NAMES, GROUP_DEFAULT_ON } from './category-groups';
 
 const SETTINGS_KEY = 'pg_settings';
@@ -51,6 +51,10 @@ function normalizeGroupThresholds(raw: unknown): Partial<Record<GroupName, numbe
 
 function isCancelDetectionBehavior(value: unknown): value is CancelDetectionBehavior {
   return value === 'ask' || value === 'paste-original' || value === 'drop';
+}
+
+function isLocalAiUnloadTimeoutMs(value: unknown): value is LocalAiUnloadTimeoutMs {
+  return (LOCAL_AI_UNLOAD_TIMEOUT_CHOICES as readonly unknown[]).includes(value);
 }
 
 function normalizeAllowlist(raw: unknown): AllowlistEntry[] {
@@ -118,6 +122,15 @@ function normalizeSettings(raw: unknown): Settings {
   }
   if (!isCancelDetectionBehavior(settings.cancelDetectionBehavior)) {
     settings.cancelDetectionBehavior = DEFAULT_SETTINGS.cancelDetectionBehavior;
+  }
+  if (!isLocalAiUnloadTimeoutMs(settings.localAiUnloadTimeoutMs)) {
+    settings.localAiUnloadTimeoutMs = DEFAULT_SETTINGS.localAiUnloadTimeoutMs;
+  }
+  if (typeof settings.keepLocalAiLoadedWhileActive !== 'boolean') {
+    settings.keepLocalAiLoadedWhileActive = DEFAULT_SETTINGS.keepLocalAiLoadedWhileActive;
+  }
+  if (typeof settings.autoWarmLocalAiOnActiveSupportedPage !== 'boolean') {
+    settings.autoWarmLocalAiOnActiveSupportedPage = DEFAULT_SETTINGS.autoWarmLocalAiOnActiveSupportedPage;
   }
   return settings;
 }

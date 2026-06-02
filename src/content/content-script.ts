@@ -57,7 +57,7 @@ import {
 } from '../shared/feedback';
 import { prepareReviewSpans } from './review-spans';
 import { resolveThreshold } from '../shared/sensitivity-resolver';
-import { NO_PII_INDICATOR_MS, CHIP_FADE_MS } from '../shared/constants';
+import { LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, CHIP_FADE_MS } from '../shared/constants';
 import type { PiiSpan, FeedbackEntry, Settings, AllowlistEntry, CancelDetectionBehavior, NerStatus, NerStatusResponse, SystemCompatibilityStatus, SystemCompatibilityStatusResponse } from '../shared/message-types';
 
 // --- Adapter selection ---
@@ -87,12 +87,51 @@ let scanningIndicator: ScanningIndicator | null = null;
 let pageStatusChip: PageStatusChip | null = null;
 let lastSystemStatus: SystemCompatibilityStatus | null = null;
 let lastNerStatus: NerStatus | null = null;
+let activityListenersStarted = false;
+let lastActivityHeartbeatAt = 0;
 /**
  * In-memory copy of the identity vault. Loaded once at init, kept up to
  * date by listening for chrome.storage changes (so an edit made in the
  * options page or another tab is visible here without a reload).
  */
 let identityVault: IdentityVaultData = emptyVaultData();
+
+function reportSupportedPageActivity(visible: boolean, force = false): void {
+  if (visible && !settings?.enabled) return;
+  const now = Date.now();
+  if (visible && !force && now - lastActivityHeartbeatAt < LOCAL_AI_ACTIVITY_HEARTBEAT_MS) return;
+  lastActivityHeartbeatAt = now;
+  chrome.runtime.sendMessage({
+    type: 'SUPPORTED_PAGE_ACTIVITY',
+    payload: { visible },
+  }).catch(() => undefined);
+}
+
+function reportUserActivity(): void {
+  if (document.visibilityState !== 'visible') return;
+  reportSupportedPageActivity(true);
+}
+
+function reportVisibility(): void {
+  reportSupportedPageActivity(document.visibilityState === 'visible', true);
+}
+
+function startSupportedPageActivityHeartbeat(): void {
+  if (activityListenersStarted) return;
+  activityListenersStarted = true;
+  const options: AddEventListenerOptions = { passive: true };
+  window.addEventListener('pointermove', reportUserActivity, options);
+  window.addEventListener('pointerdown', reportUserActivity, options);
+  window.addEventListener('keydown', reportUserActivity, options);
+  window.addEventListener('scroll', reportUserActivity, options);
+  window.addEventListener('touchstart', reportUserActivity, options);
+  window.addEventListener('paste', reportUserActivity, options);
+  window.addEventListener('focus', reportVisibility, options);
+  window.addEventListener('blur', () => reportSupportedPageActivity(false, true), options);
+  window.addEventListener('pagehide', () => reportSupportedPageActivity(false, true), options);
+  document.addEventListener('visibilitychange', reportVisibility);
+  reportVisibility();
+}
 
 // --- UI indicator ---
 
@@ -498,6 +537,11 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse): undefine
     clipboardInterceptor.setEnabled(
       settings.enabled && settings.clipboardInterceptEnabled,
     );
+    if (!settings.enabled || settings.nerProvider === 'off') {
+      reportSupportedPageActivity(false, true);
+    } else {
+      reportVisibility();
+    }
 
     if (settings.debug) {
       console.log('[PG:content] Settings updated:', settings);
@@ -561,6 +605,11 @@ async function init(): Promise<void> {
             settings.enabled && settings.clipboardInterceptEnabled,
           );
           pageStatusChip?.setTheme(settings.theme);
+          if (!settings.enabled || settings.nerProvider === 'off') {
+            reportSupportedPageActivity(false, true);
+          } else {
+            reportVisibility();
+          }
           if (settings.debug) {
             console.log('[PG:content] Settings reloaded from storage event');
           }
@@ -579,6 +628,7 @@ async function init(): Promise<void> {
 
   // Start interception and observation
   interceptor.start();
+  startSupportedPageActivityHeartbeat();
   responseObserver.start();
   clipboardInterceptor.setTheme(settings.theme);
   clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);

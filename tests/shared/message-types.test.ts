@@ -5,6 +5,7 @@ import {
   type EntityType,
   type GetSystemCompatibilityStatusRequest,
   type SetLocalAiDetectionRequest,
+  type SupportedPageActivityRequest,
   type SystemCompatibilityStatusResponse,
   type WarmUpLocalAiRequest,
 } from '../../src/shared/message-types';
@@ -38,6 +39,7 @@ describe('EntityType contract', () => {
     const collect: CollectSystemSignalsRequest = { type: 'COLLECT_SYSTEM_SIGNALS' };
     const setLocalAi: SetLocalAiDetectionRequest = { type: 'SET_LOCAL_AI_DETECTION', payload: { enabled: true } };
     const warmUp: WarmUpLocalAiRequest = { type: 'WARM_UP_LOCAL_AI', payload: { config: { ner_provider: 'transformers' } } };
+    const activity: SupportedPageActivityRequest = { type: 'SUPPORTED_PAGE_ACTIVITY', payload: { visible: true } };
     const dismissModal: DismissCriticalLocalAiModalRequest = { type: 'DISMISS_CRITICAL_LOCAL_AI_MODAL' };
     const response: SystemCompatibilityStatusResponse = {
       type: 'SYSTEM_COMPATIBILITY_STATUS',
@@ -60,6 +62,7 @@ describe('EntityType contract', () => {
     expect(collect.type).toBe('COLLECT_SYSTEM_SIGNALS');
     expect(setLocalAi.payload.enabled).toBe(true);
     expect(warmUp.payload?.config?.ner_provider).toBe('transformers');
+    expect(activity.payload.visible).toBe(true);
     expect(dismissModal.type).toBe('DISMISS_CRITICAL_LOCAL_AI_MODAL');
     expect(response.payload.tier).toBe('critical');
   });

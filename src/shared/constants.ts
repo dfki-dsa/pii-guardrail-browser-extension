@@ -1,4 +1,4 @@
-import type { NerModelKey, Settings } from './message-types';
+import type { LocalAiUnloadTimeoutMs, NerModelKey, Settings } from './message-types';
 import { defaultGroupsEnabled } from './category-groups';
 
 /** Curated LLM chat URLs where paste interception is active. */
@@ -25,7 +25,16 @@ export const NO_PII_INDICATOR_MS = 1500;
 export const CHIP_FADE_MS = 5000;
 
 /** Offscreen document idle timeout before closing (ms). */
-export const OFFSCREEN_IDLE_MS = 60_000;
+export const OFFSCREEN_IDLE_MS = 600_000 satisfies LocalAiUnloadTimeoutMs;
+export const LOCAL_AI_ACTIVITY_WINDOW_MS = 30_000;
+export const LOCAL_AI_ACTIVITY_HEARTBEAT_MS = 15_000;
+export const LOCAL_AI_UNLOAD_TIMEOUT_CHOICES: readonly LocalAiUnloadTimeoutMs[] = [
+  60_000,
+  300_000,
+  600_000,
+  1_800_000,
+  null,
+];
 
 export interface NerModelDefinition {
   key: NerModelKey;
@@ -141,6 +150,9 @@ export const DEFAULT_SETTINGS: Settings = {
   skipCodeBlocks: false,
   // Privacy-safe default: an explicit cancel asks what to do with the pending paste.
   cancelDetectionBehavior: 'ask',
+  localAiUnloadTimeoutMs: OFFSCREEN_IDLE_MS,
+  keepLocalAiLoadedWhileActive: true,
+  autoWarmLocalAiOnActiveSupportedPage: true,
 };
 
 /** Placeholder format for anonymized entities. */

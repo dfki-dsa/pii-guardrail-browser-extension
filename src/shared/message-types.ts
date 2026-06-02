@@ -242,6 +242,13 @@ export interface WarmUpLocalAiRequest {
   };
 }
 
+export interface SupportedPageActivityRequest {
+  type: 'SUPPORTED_PAGE_ACTIVITY';
+  payload: {
+    visible: boolean;
+  };
+}
+
 export interface DismissCriticalLocalAiModalRequest {
   type: 'DISMISS_CRITICAL_LOCAL_AI_MODAL';
 }
@@ -314,6 +321,7 @@ export type ReplacementModeSetting = 'placeholder' | 'synthetic';
 export type ThemeSetting = 'dark' | 'light';
 
 export type CancelDetectionBehavior = 'ask' | 'paste-original' | 'drop';
+export type LocalAiUnloadTimeoutMs = 60_000 | 300_000 | 600_000 | 1_800_000 | null;
 
 export interface Settings {
   enabled: boolean;
@@ -344,6 +352,12 @@ export interface Settings {
   skipCodeBlocks: boolean;
   /** What to do after the user explicitly cancels a running paste scan. */
   cancelDetectionBehavior: CancelDetectionBehavior;
+  /** How long the Local AI runtime may remain loaded after relevant activity. Null keeps it for the browser session. */
+  localAiUnloadTimeoutMs: LocalAiUnloadTimeoutMs;
+  /** Keep an already-loaded Local AI runtime resident while the user is active on a foreground supported page. */
+  keepLocalAiLoadedWhileActive: boolean;
+  /** Proactively load Local AI when the user is active on a foreground supported page. */
+  autoWarmLocalAiOnActiveSupportedPage: boolean;
 }
 
 export type Message =
@@ -363,6 +377,7 @@ export type Message =
   | SystemCompatibilityStatusResponse
   | SetLocalAiDetectionRequest
   | WarmUpLocalAiRequest
+  | SupportedPageActivityRequest
   | DismissCriticalLocalAiModalRequest
   | CollectSystemSignalsRequest
   | SystemSignalsResponse

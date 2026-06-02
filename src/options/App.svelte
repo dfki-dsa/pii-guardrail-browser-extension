@@ -65,6 +65,9 @@
 			retryLocalAi={model.retryLocalAi}
 			rerunSystemCheck={model.rerunSystemCheck}
 			setNerModel={model.setNerModel}
+			setLocalAiUnloadTimeoutMs={model.setLocalAiUnloadTimeoutMs}
+			setKeepLocalAiLoadedWhileActive={model.setKeepLocalAiLoadedWhileActive}
+			setAutoWarmLocalAiOnActiveSupportedPage={model.setAutoWarmLocalAiOnActiveSupportedPage}
 		/>
 
 		<SensitivityCard

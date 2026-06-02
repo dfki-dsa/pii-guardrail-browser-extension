@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Writable } from 'svelte/store';
-	import type { NerModelKey, Settings, SystemCompatibilityStatus } from '../../shared/message-types';
-	import { NER_MODELS } from '../../shared/constants';
+	import type { LocalAiUnloadTimeoutMs, NerModelKey, Settings, SystemCompatibilityStatus } from '../../shared/message-types';
+	import { LOCAL_AI_UNLOAD_TIMEOUT_CHOICES, NER_MODELS } from '../../shared/constants';
 	import CardHeading from '../../popup/components/CardHeading.svelte';
 
 	let {
@@ -12,6 +12,9 @@
 		retryLocalAi,
 		rerunSystemCheck,
 		setNerModel,
+		setLocalAiUnloadTimeoutMs,
+		setKeepLocalAiLoadedWhileActive,
+		setAutoWarmLocalAiOnActiveSupportedPage,
 	}: {
 		settings: Writable<Settings | null>;
 		status: Writable<SystemCompatibilityStatus | null>;
@@ -20,6 +23,9 @@
 		retryLocalAi: () => Promise<void>;
 		rerunSystemCheck: () => Promise<void>;
 		setNerModel: (model: NerModelKey) => Promise<void>;
+		setLocalAiUnloadTimeoutMs: (value: LocalAiUnloadTimeoutMs) => Promise<void>;
+		setKeepLocalAiLoadedWhileActive: (enabled: boolean) => Promise<void>;
+		setAutoWarmLocalAiOnActiveSupportedPage: (enabled: boolean) => Promise<void>;
 	} = $props();
 
 	let rerunInFlight = $state(false);
@@ -68,10 +74,20 @@
 
 	let localAiEnabled = $derived($settings?.nerProvider !== 'off');
 	let modelPickerDisabled = $derived(!$settings || !localAiEnabled || $warmupState === 'loading');
+	let unloadTimeoutValue = $derived(String($settings?.localAiUnloadTimeoutMs ?? 'session'));
 	let loadFailureMessage = $derived($status?.loadFailure?.message ?? null);
 	let showRetry = $derived(
 		($status?.localAiState === 'off-load-failure' || $warmupState === 'failed') && $warmupState !== 'loading',
 	);
+
+	function timeoutLabel(value: LocalAiUnloadTimeoutMs): string {
+		if (value === null) return 'Browser session';
+		return `${Math.round(value / 60000)} min`;
+	}
+
+	function parseTimeout(value: string): LocalAiUnloadTimeoutMs {
+		return value === 'session' ? null : Number(value) as LocalAiUnloadTimeoutMs;
+	}
 </script>
 
 <article class="card" id="system-compatibility-section" aria-live="polite">
@@ -125,6 +141,38 @@
 					<button type="button" class="retry" onclick={() => retryLocalAi()}>Retry Local AI</button>
 				</div>
 			{/if}
+
+			<div class="runtime-controls">
+				<label class="model-label" for="local-ai-unload-timeout">Unload after inactivity</label>
+				<select
+					id="local-ai-unload-timeout"
+					value={unloadTimeoutValue}
+					disabled={!$settings}
+					onchange={(event) => setLocalAiUnloadTimeoutMs(parseTimeout(event.currentTarget.value))}
+				>
+					{#each LOCAL_AI_UNLOAD_TIMEOUT_CHOICES as timeout (String(timeout))}
+						<option value={timeout === null ? 'session' : String(timeout)}>{timeoutLabel(timeout)}</option>
+					{/each}
+				</select>
+				<label class="checkbox-row">
+					<input
+						type="checkbox"
+						checked={$settings?.keepLocalAiLoadedWhileActive ?? true}
+						disabled={!$settings}
+						onchange={(event) => setKeepLocalAiLoadedWhileActive(event.currentTarget.checked)}
+					/>
+					<span>Keep loaded while active on a supported page</span>
+				</label>
+				<label class="checkbox-row">
+					<input
+						type="checkbox"
+						checked={$settings?.autoWarmLocalAiOnActiveSupportedPage ?? false}
+						disabled={!$settings || !localAiEnabled}
+						onchange={(event) => setAutoWarmLocalAiOnActiveSupportedPage(event.currentTarget.checked)}
+					/>
+					<span>Warm Local AI on capable active supported pages</span>
+				</label>
+			</div>
 		</div>
 
 		<div class="grid">
@@ -178,6 +226,9 @@
 	.model-label { margin-top: 12px; }
 	select { width: 100%; margin-top: 6px; padding: 8px; border: var(--border-hairline); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-ink); }
 	select:disabled { opacity: 0.7; }
+	.runtime-controls { margin-top: 12px; padding-top: 10px; border-top: var(--border-hairline); }
+	.checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--color-ink); font-size: 12px; line-height: 1.4; }
+	.checkbox-row input { width: 16px; height: 16px; margin: 0; flex: 0 0 auto; accent-color: var(--color-accent); }
 	.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
 	.grid > div { min-width: 0; }
 	.label { display: block; margin-bottom: 2px; }

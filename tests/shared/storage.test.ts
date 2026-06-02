@@ -15,6 +15,9 @@ describe('settings storage', () => {
         nerModel: 'bardsai',
         clipboardInterceptEnabled: true,
         cancelDetectionBehavior: 'ask',
+        localAiUnloadTimeoutMs: 600000,
+        keepLocalAiLoadedWhileActive: true,
+        autoWarmLocalAiOnActiveSupportedPage: true,
       })
     );
   });
@@ -109,6 +112,55 @@ describe('settings storage', () => {
 
     expect(chrome.storage.local.set).toHaveBeenCalledWith({
       pg_settings: expect.objectContaining({ cancelDetectionBehavior: 'paste-original' }),
+    });
+  });
+
+  test('normalizes Local AI runtime lifecycle settings', async () => {
+    const { localAiUnloadTimeoutMs: _timeout, keepLocalAiLoadedWhileActive: _keep, autoWarmLocalAiOnActiveSupportedPage: _warm, ...storedBeforeFlags } = DEFAULT_SETTINGS;
+    (chrome.storage.local.get as jest.Mock)
+      .mockResolvedValueOnce({ pg_settings: storedBeforeFlags })
+      .mockResolvedValueOnce({
+        pg_settings: {
+          ...DEFAULT_SETTINGS,
+          localAiUnloadTimeoutMs: 42,
+          keepLocalAiLoadedWhileActive: 'yes',
+          autoWarmLocalAiOnActiveSupportedPage: 'no',
+        },
+      });
+
+    await expect(loadSettings()).resolves.toEqual(
+      expect.objectContaining({
+        localAiUnloadTimeoutMs: 600000,
+        keepLocalAiLoadedWhileActive: true,
+        autoWarmLocalAiOnActiveSupportedPage: true,
+      })
+    );
+    await expect(loadSettings()).resolves.toEqual(
+      expect.objectContaining({
+        localAiUnloadTimeoutMs: 600000,
+        keepLocalAiLoadedWhileActive: true,
+        autoWarmLocalAiOnActiveSupportedPage: true,
+      })
+    );
+  });
+
+  test('persists valid Local AI runtime lifecycle settings', async () => {
+    (chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
+      pg_settings: DEFAULT_SETTINGS,
+    });
+
+    await saveSettings({
+      localAiUnloadTimeoutMs: null,
+      keepLocalAiLoadedWhileActive: false,
+      autoWarmLocalAiOnActiveSupportedPage: true,
+    });
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      pg_settings: expect.objectContaining({
+        localAiUnloadTimeoutMs: null,
+        keepLocalAiLoadedWhileActive: false,
+        autoWarmLocalAiOnActiveSupportedPage: true,
+      }),
     });
   });
 });

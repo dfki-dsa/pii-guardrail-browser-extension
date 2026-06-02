@@ -9,6 +9,8 @@ describe('background system compatibility orchestration', () => {
   let messageListener: ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean) | undefined;
   let sendMessage: jest.Mock;
   let createDocument: jest.Mock;
+  let closeDocument: jest.Mock;
+  let hasDocument: jest.Mock;
 
   async function importWorker(): Promise<void> {
     jest.resetModules();
@@ -21,6 +23,8 @@ describe('background system compatibility orchestration', () => {
       return {};
     });
     createDocument = jest.fn().mockResolvedValue(undefined);
+    closeDocument = jest.fn().mockResolvedValue(undefined);
+    hasDocument = jest.fn().mockResolvedValue(false);
 
     (globalThis as any).chrome = {
       storage: {
@@ -39,9 +43,9 @@ describe('background system compatibility orchestration', () => {
         getURL: jest.fn((path: string) => `chrome-extension://test/${path}`),
       },
       offscreen: {
-        hasDocument: jest.fn().mockResolvedValue(false),
+        hasDocument,
         createDocument,
-        closeDocument: jest.fn().mockResolvedValue(undefined),
+        closeDocument,
       },
       tabs: {
         query: jest.fn().mockResolvedValue([]),
@@ -57,6 +61,10 @@ describe('background system compatibility orchestration', () => {
     };
 
     await import('../../src/background/service-worker');
+  }
+
+  async function flushAsyncWork(): Promise<void> {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
   }
 
   test('auto-disables transformer Local AI once on a first critical compatibility result', async () => {
@@ -151,6 +159,7 @@ describe('background system compatibility orchestration', () => {
     await importWorker();
     store[SYSTEM_CHECK_STORAGE_KEY] = buildSystemCheckResult({ browserMemoryGb: 16, webGpu: 'available' }, 100);
     store[SETTINGS_KEY] = { ...DEFAULT_SETTINGS, nerProvider: 'transformers' };
+    hasDocument.mockResolvedValue(true);
 
     await new Promise((resolve) => {
       messageListener?.({ type: 'SET_LOCAL_AI_DETECTION', payload: { enabled: false } }, {}, resolve);
@@ -158,12 +167,14 @@ describe('background system compatibility orchestration', () => {
 
     expect(store[SETTINGS_KEY]).toEqual(expect.objectContaining({ nerProvider: 'off' }));
     expect(store[SYSTEM_CHECK_STORAGE_KEY]).toEqual(expect.objectContaining({ localAiState: 'off-user-choice' }));
+    expect(closeDocument).toHaveBeenCalledTimes(1);
   });
 
   test('warmup message creates the NER offscreen document and returns model status', async () => {
     await importWorker();
     store[SETTINGS_KEY] = { ...DEFAULT_SETTINGS, nerProvider: 'transformers' };
     sendMessage.mockImplementation(async (message) => {
+      if (message?.type === 'OFFSCREEN_PING') return { type: 'OFFSCREEN_PONG' };
       if (message?.type === 'DETECT_PII') return { type: 'PII_RESULT', payload: { requestId: message.payload.requestId, spans: [] } };
       if (message?.type === 'GET_NER_STATUS') return { type: 'NER_STATUS', payload: { mode: 'transformers', state: 'ready', model: 'bardsai' } };
       return {};
@@ -367,6 +378,7 @@ describe('background system compatibility orchestration', () => {
       localAiState: 'enabled',
       criticalModal: 'dismissed',
     };
+    hasDocument.mockResolvedValue(true);
 
     const response = await new Promise<any>((resolve) => {
       messageListener?.({ type: 'APPLY_CRITICAL_RECOMMENDATION', payload: { accepted: true } }, {}, resolve);
@@ -378,6 +390,7 @@ describe('background system compatibility orchestration', () => {
       localAiState: 'off-low-memory-auto',
       criticalModal: 'pending',
     }));
+    expect(closeDocument).toHaveBeenCalledTimes(1);
   });
 
   test('declining a critical recommendation preserves Local AI and records the decline', async () => {
@@ -414,5 +427,56 @@ describe('background system compatibility orchestration', () => {
     });
     expect(createDocument).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'GET_NER_STATUS' }));
+  });
+
+  test('supported-page activity does not warm Local AI when active-page warmup is disabled', async () => {
+    await importWorker();
+    store[SETTINGS_KEY] = {
+      ...DEFAULT_SETTINGS,
+      autoWarmLocalAiOnActiveSupportedPage: false,
+    };
+    store[SYSTEM_CHECK_STORAGE_KEY] = buildSystemCheckResult({ browserMemoryGb: 32, webGpu: 'available' }, 100);
+    (chrome.tabs.query as jest.Mock).mockResolvedValue([{ id: 7, url: 'https://chatgpt.com/c/1' }]);
+
+    const response = await new Promise((resolve) => {
+      messageListener?.(
+        { type: 'SUPPORTED_PAGE_ACTIVITY', payload: { visible: true } },
+        { tab: { id: 7, url: 'https://chatgpt.com/c/1' } },
+        resolve,
+      );
+    });
+
+    expect(response).toEqual({ ok: true });
+    expect(createDocument).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'DETECT_PII' }));
+  });
+
+  test('supported-page activity can opt in to Local AI warmup on capable systems', async () => {
+    await importWorker();
+    store[SETTINGS_KEY] = {
+      ...DEFAULT_SETTINGS,
+      autoWarmLocalAiOnActiveSupportedPage: true,
+    };
+    store[SYSTEM_CHECK_STORAGE_KEY] = buildSystemCheckResult({ browserMemoryGb: 32, webGpu: 'available' }, 100);
+    (chrome.tabs.query as jest.Mock).mockResolvedValue([{ id: 7, url: 'https://chatgpt.com/c/1' }]);
+    sendMessage.mockImplementation(async (message) => {
+      if (message?.type === 'OFFSCREEN_PING') return { type: 'OFFSCREEN_PONG' };
+      if (message?.type === 'DETECT_PII') return { type: 'PII_RESULT', payload: { requestId: message.payload.requestId, spans: [] } };
+      if (message?.type === 'GET_NER_STATUS') return { type: 'NER_STATUS', payload: { mode: 'transformers', state: 'ready', model: 'bardsai' } };
+      return {};
+    });
+
+    await new Promise((resolve) => {
+      messageListener?.(
+        { type: 'SUPPORTED_PAGE_ACTIVITY', payload: { visible: true } },
+        { tab: { id: 7, url: 'https://chatgpt.com/c/1' } },
+        resolve,
+      );
+    });
+    await flushAsyncWork();
+
+    expect(createDocument).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'DETECT_PII' }));
+    expect(store[SYSTEM_CHECK_STORAGE_KEY]).toEqual(expect.objectContaining({ runtimeState: 'ready' }));
   });
 });

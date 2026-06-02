@@ -1,29 +1,15 @@
 import { shouldAutoWarmLocalAi } from '../../src/shared/local-ai-warmup-gate';
 import type { NerStatus, Settings, SystemCompatibilityStatus } from '../../src/shared/message-types';
+import { DEFAULT_SETTINGS } from '../../src/shared/constants';
 
 const baseSettings: Settings = {
-  enabled: true,
+  ...DEFAULT_SETTINGS,
   debug: false,
-  minConfidence: 0.5,
-  sensitivityMode: 'global',
-  groupThresholds: {},
   contextBoost: 0,
   contextWindow: 0,
   curatedUrls: [],
   allowlist: [],
   blocklist: [],
-  nerProvider: 'transformers',
-  nerModel: 'bardsai',
-  groupsEnabled: {
-    Identity: true, Contact: true, Financial: true, Network: true,
-    Location: true, Password: true, Organization: true, 'Low-signal': true,
-  },
-  defaultReplacementMode: 'placeholder',
-  identityVaultEnabled: true,
-  theme: 'dark',
-  clipboardInterceptEnabled: true,
-  skipCodeBlocks: false,
-  cancelDetectionBehavior: 'ask',
 };
 
 const baseStatus: SystemCompatibilityStatus = {

@@ -5,6 +5,7 @@ import type {
   CancelDetectionBehavior,
   EntityType,
   GroupName,
+  LocalAiUnloadTimeoutMs,
   ReplacementModeSetting,
   Settings,
   NerModelKey,
@@ -51,6 +52,9 @@ export type OptionsModel = {
   retryLocalAi: () => Promise<void>;
   rerunSystemCheck: () => Promise<void>;
   setNerModel: (model: NerModelKey) => Promise<void>;
+  setLocalAiUnloadTimeoutMs: (value: LocalAiUnloadTimeoutMs) => Promise<void>;
+  setKeepLocalAiLoadedWhileActive: (enabled: boolean) => Promise<void>;
+  setAutoWarmLocalAiOnActiveSupportedPage: (enabled: boolean) => Promise<void>;
   setSensitivityMode: (mode: Settings['sensitivityMode']) => Promise<void>;
   setGlobalThreshold: (value: number) => Promise<void>;
   setGroupThreshold: (group: GroupName, value: number) => Promise<void>;
@@ -259,6 +263,9 @@ export function createOptionsModel(): OptionsModel {
     retryLocalAi,
     rerunSystemCheck,
     setNerModel: (model) => saveAndBroadcast({ nerModel: model }),
+    setLocalAiUnloadTimeoutMs: (value) => saveAndBroadcast({ localAiUnloadTimeoutMs: value }),
+    setKeepLocalAiLoadedWhileActive: (enabled) => saveAndBroadcast({ keepLocalAiLoadedWhileActive: enabled }),
+    setAutoWarmLocalAiOnActiveSupportedPage: (enabled) => saveAndBroadcast({ autoWarmLocalAiOnActiveSupportedPage: enabled }),
     setSensitivityMode: (mode) => saveAndBroadcast({ sensitivityMode: mode }),
     setGlobalThreshold: (value) => saveAndBroadcast({ minConfidence: value }),
     setGroupThreshold: async (group, value) => {
