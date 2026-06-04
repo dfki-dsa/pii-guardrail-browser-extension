@@ -92,11 +92,17 @@
 
 	<div class="body">
 		<p class="intro">
-			Each detected identity is stored once and reused everywhere. Toggle
-			<em>Synthetic</em> mode to replace placeholders like <code>[PERSON_1]</code>
-			with realistic but obviously-fake values such as <code>Jordan Park</code>,
-			which often improves LLM response quality. Pin a record to lock its
-			replacement against automatic changes.
+			Each detected identity is stored once in <code>chrome.storage.local</code> and
+			reused consistently across sessions and pages — so the same person always maps to
+			the same placeholder or synthetic value. This data lives only on this device and is
+			never sent to any external service. When the vault is off, replacements reset each
+			session and the same name may get a different placeholder each time.
+		</p>
+		<p class="intro">
+			Toggle <em>Synthetic</em> mode to replace placeholders like <code>[PERSON_1]</code>
+			with realistic but clearly-invented values such as <code>Jordan Park</code>, which
+			often improves LLM response quality. Pin a record to lock its replacement against
+			automatic changes.
 		</p>
 
 		<div class="controls">

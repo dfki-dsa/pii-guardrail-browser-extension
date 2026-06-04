@@ -103,8 +103,9 @@
 				<div>
 					<label for="local-ai-toggle">Local AI detection</label>
 					<p>
-						Detects names, organizations, locations, and context-only PII. When off,
-						pattern detection remains active, but those contextual details may be missed.
+						Detects names, organizations, locations, and contextual identifiers that fixed
+						patterns alone cannot catch. Disabling this reduces coverage but also reduces
+						the memory and CPU cost of each scan.
 					</p>
 				</div>
 				<input
@@ -170,7 +171,7 @@
 						disabled={!$settings || !localAiEnabled}
 						onchange={(event) => setAutoWarmLocalAiOnActiveSupportedPage(event.currentTarget.checked)}
 					/>
-					<span>Warm Local AI on capable active supported pages</span>
+					<span>Pre-load the model when you open a supported page so the first scan is faster</span>
 				</label>
 			</div>
 		</div>
@@ -204,7 +205,7 @@
 			<button type="button" class="rerun" onclick={handleRerun} disabled={rerunInFlight}>
 				{rerunInFlight ? 'Re-running system check…' : 'Re-run system check'}
 			</button>
-			<p class="hint">Refreshes browser-reported memory and WebGPU signals. The Local AI model is not loaded.</p>
+			<p class="hint">Refreshes browser-reported memory and WebGPU capability signals. The AI model is not loaded during this check.</p>
 		</div>
 	</div>
 </article>

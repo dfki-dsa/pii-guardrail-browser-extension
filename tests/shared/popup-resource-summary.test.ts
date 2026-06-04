@@ -57,7 +57,7 @@ describe('deriveResourceSummary', () => {
     });
     expect(result?.tone).toBe('critical');
     expect(result?.detail).toMatch(/8 GB/);
-    expect(result?.detail).toMatch(/critical/i);
+    expect(result?.detail).toMatch(/below the safe threshold/i);
   });
 
   test('shows critical override wording', () => {
