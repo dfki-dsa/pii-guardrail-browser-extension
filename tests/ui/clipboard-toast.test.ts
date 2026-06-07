@@ -34,6 +34,8 @@ describe('ClipboardToast', () => {
     const host = getHost();
     expect(host).not.toBeNull();
     expect(host?.shadowRoot?.textContent).toContain('contains anonymized items');
+    expect(host?.shadowRoot?.querySelector('.pg-toast')?.classList.contains('pg-design-surface')).toBe(true);
+    expect(host?.shadowRoot?.querySelector('.pg-toast')?.getAttribute('aria-atomic')).toBe('true');
     const btn = host?.shadowRoot?.querySelector('.pg-toast-btn');
     expect(btn?.textContent).toBe('Replace with originals');
   });
@@ -59,6 +61,7 @@ describe('ClipboardToast', () => {
 
     expect(onReplace).toHaveBeenCalledTimes(1);
     expect(getHost()?.shadowRoot?.textContent).toContain('Clipboard replaced');
+    expect(btn.hidden).toBe(true);
   });
 
   it('auto-dismisses after ~6 seconds when ignored', () => {

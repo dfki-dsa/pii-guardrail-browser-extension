@@ -29,9 +29,6 @@
       "js": [
         "content/content-script.js"
       ],
-      "css": [
-        "ui/banner/de-anon-banner.css"
-      ],
       "run_at": "document_idle"
     },
     {

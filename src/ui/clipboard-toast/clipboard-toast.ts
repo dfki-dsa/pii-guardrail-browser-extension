@@ -10,11 +10,13 @@
  * replaced" confirmation and then disposes itself.
  */
 
+import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
+
 const TOAST_AUTO_DISMISS_MS = 6000;
 const CONFIRMATION_VISIBLE_MS = 1500;
 
 const CLIPBOARD_TOAST_STYLES = `
-  :host { all: initial; }
+  ${SHADOW_DESIGN_SYSTEM_STYLES}
 
   .pg-toast {
     position: fixed;
@@ -25,46 +27,49 @@ const CLIPBOARD_TOAST_STYLES = `
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    background: #1a1a2e;
-    color: #e0e0e0;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-    font-family: system-ui, -apple-system, sans-serif;
+    width: max-content;
+    max-width: min(480px, calc(100vw - 32px));
+    padding: 10px 12px;
+    border-radius: var(--pg-radius-md);
     font-size: 13px;
     line-height: 1.4;
-    max-width: 480px;
+    pointer-events: auto;
+    animation: pg-design-pop-in 160ms ease-out;
   }
 
-  .pg-toast[data-theme="light"] {
-    background: #ffffff;
-    color: #1f2933;
-    border: 1px solid #e4e6eb;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  .pg-toast-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--pg-color-success);
+    box-shadow: 0 0 0 3px rgb(34 197 94 / 16%);
+    flex: 0 0 auto;
   }
 
-  .pg-toast-msg { flex: 1; }
+  .pg-toast-msg {
+    flex: 1;
+    min-width: 0;
+  }
 
   .pg-toast-btn {
-    background: #2a2a3e;
-    border: 1px solid #3a3a4e;
-    color: #e0e0e0;
-    padding: 5px 12px;
-    border-radius: 5px;
-    font-size: 12px;
-    cursor: pointer;
-    font-family: inherit;
-    transition: background 0.15s;
+    padding: 6px 10px;
+    white-space: nowrap;
   }
-  .pg-toast-btn:hover { background: #3a3a4e; }
 
-  .pg-toast[data-theme="light"] .pg-toast-btn {
-    background: #f7f7f8;
-    border-color: #d4d4d8;
-    color: #1f2933;
+  .pg-toast-btn[hidden] {
+    display: none;
   }
-  .pg-toast[data-theme="light"] .pg-toast-btn:hover {
-    background: #f3f4f6;
+
+  @media (max-width: 520px) {
+    .pg-toast {
+      align-items: flex-start;
+      width: calc(100vw - 32px);
+    }
+
+    .pg-toast-btn {
+      white-space: normal;
+      text-align: left;
+    }
   }
 `;
 
@@ -97,9 +102,10 @@ export class ClipboardToast {
     this.shadow = this.host.attachShadow({ mode: 'closed' });
     this.shadow.innerHTML = `
       <style>${CLIPBOARD_TOAST_STYLES}</style>
-      <div class="pg-toast" data-theme="${this.theme}" role="status" aria-live="polite">
-        <span class="pg-toast-msg">Copied — contains anonymized items. Replace with originals?</span>
-        <button class="pg-toast-btn" type="button">Replace with originals</button>
+      <div class="pg-toast pg-design-surface" data-theme="${this.theme}" role="status" aria-live="polite" aria-atomic="true">
+        <span class="pg-toast-status" aria-hidden="true"></span>
+        <span class="pg-toast-msg pg-design-muted">Copied — contains anonymized items. Replace with originals?</span>
+        <button class="pg-toast-btn pg-design-button" type="button">Replace with originals</button>
       </div>
     `;
     this.toastEl = this.shadow.querySelector('.pg-toast');
@@ -149,7 +155,7 @@ export class ClipboardToast {
     if (this.disposed) return;
     this.pauseAutoDismiss();
     if (this.msgEl) this.msgEl.textContent = 'Clipboard replaced';
-    if (this.btnEl) this.btnEl.style.display = 'none';
+    if (this.btnEl) this.btnEl.hidden = true;
     window.setTimeout(() => this.dispose(), CONFIRMATION_VISIBLE_MS);
   }
 

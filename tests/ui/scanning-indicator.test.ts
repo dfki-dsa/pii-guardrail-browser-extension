@@ -38,6 +38,9 @@ describe('ScanningIndicator', () => {
     expect(shadow).not.toBeNull();
     expect(shadow?.textContent).toContain('Scanning for personal data');
     expect(shadow?.textContent).toContain('Cancel');
+    const indicatorEl = shadow?.querySelector('.pg-indicator') as HTMLElement | null;
+    expect(indicatorEl?.classList.contains('pg-design-surface')).toBe(true);
+    expect(indicatorEl?.getAttribute('aria-atomic')).toBe('true');
   });
 
   it('invokes the cancel callback from the indicator action', () => {
@@ -142,12 +145,13 @@ describe('ScanningIndicator', () => {
 
     jest.advanceTimersByTime(1);
 
-    expect(shadow?.textContent).toContain('⚠ This is taking unusually long');
+    expect(shadow?.textContent).toContain('This is taking unusually long');
+    expect((shadow?.querySelector('.pg-indicator') as HTMLElement | null)?.getAttribute('data-state')).toBe('warning');
     expect(counter?.textContent).toBe(' · 120s');
 
     jest.advanceTimersByTime(5000);
 
-    expect(shadow?.textContent).toContain('⚠ This is taking unusually long');
+    expect(shadow?.textContent).toContain('This is taking unusually long');
     expect(counter?.textContent).toBe(' · 125s');
   });
 
@@ -213,7 +217,7 @@ describe('ScanningIndicator', () => {
     }).not.toThrow();
 
     expect(document.getElementById('pg-scanning-indicator-host')).toBeNull();
-    expect(shadow?.textContent).toContain('⚠ This is taking unusually long');
+    expect(shadow?.textContent).toContain('This is taking unusually long');
     expect(counter?.textContent).toBe(textBeforeStop);
   });
 });

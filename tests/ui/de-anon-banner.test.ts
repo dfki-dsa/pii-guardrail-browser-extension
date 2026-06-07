@@ -31,6 +31,7 @@ describe('attachDeAnonBanner', () => {
   });
 
   function renderBannerFixture(): {
+    host: HTMLElement;
     responseElement: HTMLElement;
     revealBtn: HTMLButtonElement;
     copyBtn: HTMLButtonElement;
@@ -73,8 +74,17 @@ describe('attachDeAnonBanner', () => {
       throw new Error('Expected reveal and copy buttons to exist.');
     }
 
-    return { responseElement, revealBtn, copyBtn, originalMarkup };
+    return { host, responseElement, revealBtn, copyBtn, originalMarkup };
   }
+
+  it('renders the banner with the shared notification design surface', () => {
+    const { host } = renderBannerFixture();
+
+    const banner = host.shadowRoot?.querySelector('.pg-banner') as HTMLElement | null;
+    expect(banner?.classList.contains('pg-design-surface')).toBe(true);
+    expect(banner?.getAttribute('role')).toBe('status');
+    expect(banner?.getAttribute('aria-live')).toBe('polite');
+  });
 
   it('preserves block structure and unresolved placeholders when originals are revealed', () => {
     const { responseElement, revealBtn } = renderBannerFixture();

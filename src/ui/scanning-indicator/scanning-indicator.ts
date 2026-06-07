@@ -4,10 +4,10 @@
  * Persistent status toast shown while PII detection is actively running.
  */
 
+import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
+
 const SCANNING_INDICATOR_STYLES = `
-  :host {
-    all: initial;
-  }
+  ${SHADOW_DESIGN_SYSTEM_STYLES}
 
   .pg-indicator {
     position: fixed;
@@ -17,17 +17,28 @@ const SCANNING_INDICATOR_STYLES = `
     z-index: 2147483646;
     display: inline-flex;
     align-items: center;
-    gap: 0;
-    padding: 8px 16px;
-    border-radius: 8px;
-    background: #1a1a2e;
-    color: #e0e0e0;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-    font-family: system-ui, sans-serif;
+    gap: 8px;
+    padding: 8px 10px 8px 12px;
+    border-radius: var(--pg-radius-md);
     font-size: 13px;
     line-height: 1.4;
     pointer-events: auto;
     white-space: nowrap;
+    animation: pg-design-pop-in 160ms ease-out;
+  }
+
+  .pg-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--pg-color-accent);
+    box-shadow: 0 0 0 3px rgb(29 78 216 / 18%);
+    flex: 0 0 auto;
+  }
+
+  .pg-indicator[data-state="warning"] .pg-status-dot {
+    background: var(--pg-color-warning);
+    box-shadow: 0 0 0 3px rgb(245 158 11 / 20%);
   }
 
   .pg-label {
@@ -47,26 +58,12 @@ const SCANNING_INDICATOR_STYLES = `
   }
 
   .pg-cancel {
-    appearance: none;
-    border: 0;
-    border-left: 1px solid rgba(224, 224, 224, 0.24);
-    background: transparent;
+    margin-left: 4px;
+    padding: 5px 9px;
+  }
+
+  .pg-counter {
     color: inherit;
-    cursor: pointer;
-    font: inherit;
-    margin: 0 0 0 10px;
-    padding: 0 0 0 10px;
-    line-height: 1.4;
-  }
-
-  .pg-cancel:hover {
-    text-decoration: underline;
-  }
-
-  .pg-cancel:focus-visible {
-    outline: 2px solid currentColor;
-    outline-offset: 2px;
-    border-radius: 4px;
   }
 
   @keyframes pg-ellipsis-cycle {
@@ -83,22 +80,18 @@ const SCANNING_INDICATOR_STYLES = `
     }
   }
 
-  /* Minimal light theme — flat white pill with subtle border. */
-  .pg-indicator[data-theme="light"] {
-    background: #ffffff;
-    color: #1f2933;
-    border: 1px solid #e4e6eb;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-  }
-
-  .pg-indicator[data-theme="light"] .pg-cancel {
-    border-left-color: #d5d9e0;
+  @media (max-width: 420px) {
+    .pg-indicator {
+      max-width: calc(100vw - 32px);
+      white-space: normal;
+    }
   }
 `;
 
 export class ScanningIndicator {
   private host: HTMLDivElement;
   private shadow: ShadowRoot;
+  private indicatorEl: HTMLDivElement | null = null;
   private labelEl: HTMLSpanElement | null = null;
   private counterEl: HTMLSpanElement | null = null;
   private mounted = false;
@@ -130,7 +123,8 @@ export class ScanningIndicator {
       return;
     }
 
-    this.setLabel('🔏 Scanning for personal data');
+    this.indicatorEl?.setAttribute('data-state', 'active');
+    this.setLabel('Scanning for personal data');
     this.hideCounter();
     document.body.appendChild(this.host);
     this.mounted = true;
@@ -157,14 +151,16 @@ export class ScanningIndicator {
   private render(): void {
     this.shadow.innerHTML = `
       <style>${SCANNING_INDICATOR_STYLES}</style>
-      <div class="pg-indicator" data-theme="${this.theme}" role="status" aria-live="polite">
-        <span class="pg-label">🔏 Scanning for personal data</span>
+      <div class="pg-indicator pg-design-surface" data-theme="${this.theme}" data-state="active" role="status" aria-live="polite" aria-atomic="true">
+        <span class="pg-status-dot" aria-hidden="true"></span>
+        <span class="pg-label pg-design-muted">Scanning for personal data</span>
         <span class="pg-counter"></span>
         <span class="pg-ellipsis" aria-hidden="true"></span>
-        <button class="pg-cancel" type="button">Cancel</button>
+        <button class="pg-cancel pg-design-button pg-design-button-subtle" type="button">Cancel</button>
       </div>
     `;
 
+    this.indicatorEl = this.shadow.querySelector('.pg-indicator');
     this.labelEl = this.shadow.querySelector('.pg-label');
     this.counterEl = this.shadow.querySelector('.pg-counter');
     this.shadow.querySelector('.pg-cancel')?.addEventListener('click', () => {
@@ -180,14 +176,14 @@ export class ScanningIndicator {
 
   private scheduleTierTwoEscalation(): void {
     this.tierTwoTimer = window.setTimeout(() => {
-      this.setLabel('🔏 Still scanning');
+      this.setLabel('Still scanning');
       this.tierTwoTimer = null;
     }, 2000);
   }
 
   private scheduleTierThreeCounter(): void {
     this.tierThreeTimer = window.setTimeout(() => {
-      this.setLabel('🔏 Still scanning');
+      this.setLabel('Still scanning');
       this.updateCounterText();
       this.counterInterval = window.setInterval(() => {
         this.updateCounterText();
@@ -198,7 +194,8 @@ export class ScanningIndicator {
 
   private scheduleTierFourWarning(): void {
     this.tierFourTimer = window.setTimeout(() => {
-      this.setLabel('⚠ This is taking unusually long');
+      this.indicatorEl?.setAttribute('data-state', 'warning');
+      this.setLabel('This is taking unusually long');
       this.tierFourTimer = null;
     }, 120000);
   }

@@ -9,6 +9,7 @@
 import { EntityMap } from '../../shared/entity-map';
 import { deAnonymize } from '../../shared/de-anonymizer';
 import { resolveText } from '../../shared/placeholder-resolver';
+import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
 
 type FormControl = HTMLInputElement | HTMLTextAreaElement;
 
@@ -83,11 +84,11 @@ export function attachDeAnonBanner(
 
   shadow.innerHTML = `
     <style>${BANNER_STYLES}</style>
-    <div class="pg-banner" data-theme="${theme}">
-      <span class="pg-banner-icon">&#x1F512;</span>
-      <span class="pg-banner-text">${totalRevealable} anonymized item${totalRevealable !== 1 ? 's' : ''}</span>
-      <button class="pg-banner-btn" id="pg-reveal-btn">Reveal originals</button>
-      <button class="pg-banner-btn pg-banner-copy" id="pg-copy-btn" title="Copy de-anonymized text">Copy</button>
+    <div class="pg-banner pg-design-surface" data-theme="${theme}" role="status" aria-live="polite">
+      <span class="pg-banner-icon" aria-hidden="true"></span>
+      <span class="pg-banner-text pg-design-muted">${totalRevealable} anonymized item${totalRevealable !== 1 ? 's' : ''}</span>
+      <button class="pg-banner-btn pg-design-button" id="pg-reveal-btn">Reveal originals</button>
+      <button class="pg-banner-btn pg-banner-copy pg-design-button pg-design-button-subtle" id="pg-copy-btn" title="Copy de-anonymized text">Copy</button>
     </div>
   `;
 
@@ -308,38 +309,34 @@ function restoreOriginalContent(
 }
 
 const BANNER_STYLES = `
+  ${SHADOW_DESIGN_SYSTEM_STYLES}
+
   .pg-banner {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
+    padding: 7px 10px;
     margin-bottom: 6px;
-    background: #1a1a2e;
-    border-radius: 6px;
-    font-family: system-ui, -apple-system, sans-serif;
+    border-radius: var(--pg-radius-md);
     font-size: 12px;
-    color: #a0a0b0;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    line-height: 1.4;
   }
 
-  .pg-banner-icon { font-size: 14px; }
+  .pg-banner-icon {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--pg-color-success);
+    box-shadow: 0 0 0 3px rgb(34 197 94 / 16%);
+    flex: 0 0 auto;
+  }
 
   .pg-banner-text { flex: 1; }
 
   .pg-banner-btn {
-    background: #2a2a3e;
-    border: 1px solid #3a3a4e;
-    color: #e0e0e0;
-    padding: 4px 10px;
-    border-radius: 4px;
+    padding: 5px 9px;
     font-size: 11px;
-    cursor: pointer;
-    transition: background 0.15s;
   }
-  .pg-banner-btn:hover { background: #3a3a4e; }
-
-  .pg-banner-copy { color: #888; }
-  .pg-banner-copy:hover { color: #e0e0e0; }
 
   .pg-revealed {
     border-radius: 3px;
@@ -365,26 +362,4 @@ const BANNER_STYLES = `
   .pg-revealed-organization { background: rgba(249, 115, 22, 0.2); color: #fdba74; }
   .pg-revealed-date { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
   .pg-revealed-misc { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
-
-  /* Minimal light theme */
-  .pg-banner[data-theme="light"] {
-    background: #ffffff;
-    color: #4b5563;
-    border: 1px solid #e4e6eb;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  }
-  .pg-banner[data-theme="light"] .pg-banner-btn {
-    background: #f7f7f8;
-    border-color: #d4d4d8;
-    color: #1f2933;
-  }
-  .pg-banner[data-theme="light"] .pg-banner-btn:hover {
-    background: #f3f4f6;
-  }
-  .pg-banner[data-theme="light"] .pg-banner-copy {
-    color: #6b7280;
-  }
-  .pg-banner[data-theme="light"] .pg-banner-copy:hover {
-    color: #1f2933;
-  }
 `;
