@@ -9,7 +9,7 @@ const ENTITY_MAPS_KEY = 'pg_entity_maps';
 
 /** Load extension settings from chrome.storage.local. */
 export async function loadSettings(): Promise<Settings> {
-  const result = await chrome.storage.local.get(SETTINGS_KEY);
+  const result = await chrome.storage.local.get(SETTINGS_KEY) ?? {};
   return normalizeSettings(result[SETTINGS_KEY]);
 }
 
@@ -137,7 +137,7 @@ function normalizeSettings(raw: unknown): Settings {
 
 /** Append a feedback entry to the log. */
 export async function logFeedback(entry: FeedbackEntry): Promise<void> {
-  const result = await chrome.storage.local.get(FEEDBACK_KEY);
+  const result = await chrome.storage.local.get(FEEDBACK_KEY) ?? {};
   const log: FeedbackEntry[] = result[FEEDBACK_KEY] || [];
   log.push(entry);
   // Keep last 1000 entries to avoid unbounded growth
@@ -149,7 +149,7 @@ export async function logFeedback(entry: FeedbackEntry): Promise<void> {
 
 /** Get all feedback entries. */
 export async function getFeedbackLog(): Promise<FeedbackEntry[]> {
-  const result = await chrome.storage.local.get(FEEDBACK_KEY);
+  const result = await chrome.storage.local.get(FEEDBACK_KEY) ?? {};
   return result[FEEDBACK_KEY] || [];
 }
 
@@ -168,7 +168,7 @@ export async function saveEntityMap(
   conversationUrl: string,
   map: StoredEntityMap
 ): Promise<void> {
-  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
+  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY) ?? {};
   const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
   maps[conversationUrl] = { ...maps[conversationUrl], ...map };
   await chrome.storage.local.set({ [ENTITY_MAPS_KEY]: maps });
@@ -178,7 +178,7 @@ export async function saveEntityMap(
 export async function loadEntityMap(
   conversationUrl: string
 ): Promise<StoredEntityMap> {
-  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
+  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY) ?? {};
   const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
   return maps[conversationUrl] || {};
 }
@@ -186,7 +186,7 @@ export async function loadEntityMap(
 /** Clear entity maps for a specific conversation or all conversations. */
 export async function clearEntityMaps(conversationUrl?: string): Promise<void> {
   if (conversationUrl) {
-    const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
+    const result = await chrome.storage.local.get(ENTITY_MAPS_KEY) ?? {};
     const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
     delete maps[conversationUrl];
     await chrome.storage.local.set({ [ENTITY_MAPS_KEY]: maps });

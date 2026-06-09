@@ -128,7 +128,7 @@ export async function loadIdentityVault(): Promise<IdentityVaultData> {
   if (typeof chrome === 'undefined' || !chrome.storage?.local) {
     return emptyVaultData();
   }
-  const result = await chrome.storage.local.get(VAULT_STORAGE_KEY);
+  const result = await chrome.storage.local.get(VAULT_STORAGE_KEY) ?? {};
   const stored = result[VAULT_STORAGE_KEY];
   if (!stored || typeof stored !== 'object') return emptyVaultData();
 

@@ -215,7 +215,7 @@ async function externalNerSpansFor(
       });
       return { spans, nerMs };
     } catch (err) {
-      if (signal?.aborted || err instanceof DOMException && err.name === 'AbortError') {
+      if (signal?.aborted) {
         throw err;
       }
 
