@@ -33,7 +33,7 @@ describe('ClipboardToast', () => {
 
     const host = getHost();
     expect(host).not.toBeNull();
-    expect(host?.shadowRoot?.textContent).toContain('contains anonymized items');
+    expect(host?.shadowRoot?.textContent).toContain('contains replaced items');
     expect(host?.shadowRoot?.querySelector('.pg-toast')?.classList.contains('pg-design-surface')).toBe(true);
     expect(host?.shadowRoot?.querySelector('.pg-toast')?.getAttribute('aria-atomic')).toBe('true');
     const btn = host?.shadowRoot?.querySelector('.pg-toast-btn');

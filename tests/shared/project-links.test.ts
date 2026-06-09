@@ -10,6 +10,8 @@ describe('public project links', () => {
       privacy: `${PUBLIC_PROJECT_REPO_URL}/blob/main/PRIVACY.md`,
       security: `${PUBLIC_PROJECT_REPO_URL}/blob/main/SECURITY.md`,
       support: `${PUBLIC_PROJECT_REPO_URL}/blob/main/SUPPORT.md`,
+      impressum: `${PUBLIC_PROJECT_REPO_URL}/blob/main/IMPRESSUM.md`,
+      terms: `${PUBLIC_PROJECT_REPO_URL}/blob/main/TERMS.md`,
     });
   });
 

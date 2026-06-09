@@ -116,7 +116,7 @@
 		</div>
 
 		{#if $records.length === 0}
-			<p class="empty">The vault is empty. Records will appear here as you confirm anonymisations.</p>
+			<p class="empty">The vault is empty. Records will appear here as you confirm replacements.</p>
 		{:else}
 			<div class="table-wrap">
 				<table class="vault-table" aria-label="Identity vault entries">

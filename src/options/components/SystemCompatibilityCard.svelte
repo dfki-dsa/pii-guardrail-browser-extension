@@ -2,6 +2,7 @@
 	import type { Writable } from 'svelte/store';
 	import type { LocalAiUnloadTimeoutMs, NerModelKey, Settings, SystemCompatibilityStatus } from '../../shared/message-types';
 	import { LOCAL_AI_UNLOAD_TIMEOUT_CHOICES, NER_MODELS } from '../../shared/constants';
+	import { AI_TRANSPARENCY_NOTICE } from '../../shared/project-links';
 	import CardHeading from '../../popup/components/CardHeading.svelte';
 
 	let {
@@ -99,6 +100,8 @@
 		</div>
 
 		<div class="local-ai-control">
+			<p class="ai-notice" role="note">{AI_TRANSPARENCY_NOTICE}</p>
+
 			<div class="toggle-row">
 				<div>
 					<label for="local-ai-toggle">Local AI detection</label>
@@ -219,6 +222,7 @@
 	.summary-title { font-size: 13px; font-weight: 600; }
 	.summary-detail, .label, .hint, .notes { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 	.local-ai-control { margin-top: 12px; padding: 12px; border: var(--border-hairline); border-radius: var(--radius-md); }
+	.ai-notice { margin: 0 0 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--color-surface); border: var(--border-hairline); color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 	.toggle-row { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 	.toggle-row label, .model-label { display: block; font-size: 13px; font-weight: 600; }
 	.toggle-row p { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }

@@ -55,7 +55,13 @@
 
     <section class="shell-body" aria-live="polite">
       {#if $activeTab === "protect"}
-        <ProtectTab {protection} {categories} {vault} />
+        <ProtectTab
+          {protection}
+          {categories}
+          {vault}
+          openPrivacyPolicy={settings.openPrivacyPolicy}
+          openImpressum={settings.openImpressum}
+        />
       {:else if $activeTab === "detect"}
         <DetectTab {categories} />
       {:else if $activeTab === "test"}
@@ -86,6 +92,8 @@
           openIssueReport={settings.openIssueReport}
           openSecurityReport={settings.openSecurityReport}
           openPrivacySupport={settings.openPrivacySupport}
+          openPrivacyPolicy={settings.openPrivacyPolicy}
+          openImpressum={settings.openImpressum}
           clearFeedback={test.clearFeedback}
           clearMappings={vault.clearMappings}
         />

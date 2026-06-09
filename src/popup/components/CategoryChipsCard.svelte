@@ -17,7 +17,7 @@
 </article>
 
 <style>
-	.card { margin-bottom: 8px; overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
+	.card { overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
 	.chip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; }
 	.chip {
 		display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 0; border-radius: 6px;

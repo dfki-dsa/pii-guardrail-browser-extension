@@ -104,7 +104,7 @@ export class ClipboardToast {
       <style>${CLIPBOARD_TOAST_STYLES}</style>
       <div class="pg-toast pg-design-surface" data-theme="${this.theme}" role="status" aria-live="polite" aria-atomic="true">
         <span class="pg-toast-status" aria-hidden="true"></span>
-        <span class="pg-toast-msg pg-design-muted">Copied — contains anonymized items. Replace with originals?</span>
+        <span class="pg-toast-msg pg-design-muted">Copied — contains replaced items. Restore originals?</span>
         <button class="pg-toast-btn pg-design-button" type="button">Replace with originals</button>
       </div>
     `;

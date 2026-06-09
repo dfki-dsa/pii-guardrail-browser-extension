@@ -4,6 +4,7 @@
 	import type { NerModelKey, Settings } from '../../shared/message-types';
 	import type { ACTIVE_NER_MODELS } from '../../shared/constants';
 	import Toggle from './Toggle.svelte';
+	import LegalCard from './LegalCard.svelte';
 
 	let {
 		minConfidence,
@@ -22,6 +23,8 @@
 		openIssueReport,
 		openSecurityReport,
 		openPrivacySupport,
+		openPrivacyPolicy,
+		openImpressum,
 		clearFeedback,
 		clearMappings,
 	}: {
@@ -41,6 +44,8 @@
 		openIssueReport: () => void;
 		openSecurityReport: () => void;
 		openPrivacySupport: () => void;
+		openPrivacyPolicy: () => void;
+		openImpressum: () => void;
 		clearFeedback: () => Promise<void>;
 		clearMappings: () => Promise<void>;
 	} = $props();
@@ -75,7 +80,7 @@
 
 	<article class="card">
 		<div class="head"><span>Behavior</span></div>
-		<div class="row"><div><div class="row-label">Intercept clipboard</div><div class="row-meta">Offer to restore copied anonymized items</div></div><Toggle size="sm" checked={$clipboardInterceptEnabled} onchange={(checked) => setClipboardInterceptEnabled(checked)} label="Intercept clipboard" /></div>
+		<div class="row"><div><div class="row-label">Intercept clipboard</div><div class="row-meta">Offer to restore copied replaced items</div></div><Toggle size="sm" checked={$clipboardInterceptEnabled} onchange={(checked) => setClipboardInterceptEnabled(checked)} label="Intercept clipboard" /></div>
 		<div class="divider"></div>
 		<div class="row"><div><div class="row-label">Debug mode</div><div class="row-meta">Verbose logging in console</div></div><Toggle size="sm" checked={$debug} onchange={(checked) => setDebug(checked)} label="Debug mode" /></div>
 	</article>
@@ -93,14 +98,16 @@
 		<div class="divider"></div>
 		<button type="button" class="link-row" onclick={openSecurityReport}><span class="row-label">Report security/privacy issue</span><span class="right">›</span></button>
 		<div class="divider"></div>
-		<button type="button" class="link-row" onclick={openPrivacySupport}><span class="row-label">Privacy/support</span><span class="right">›</span></button>
+		<button type="button" class="link-row" onclick={openPrivacySupport}><span class="row-label">Support</span><span class="right">›</span></button>
 	</article>
+
+	<LegalCard {openPrivacyPolicy} {openImpressum} />
 	<div class="version-note">Privacy Guardrail · {$nerModel}</div>
 </div>
 
 <style>
-	.settings-stack { display: grid; }
-	.card { margin-bottom: 8px; overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
+	.settings-stack { display: flex; flex-direction: column; gap: 8px; }
+	.card { overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
 	.head { display: flex; justify-content: space-between; padding: 11px 12px; border-bottom: 1px solid var(--color-border); }
 	.head span { font-size: 12px; font-weight: 600; }
 	.row, .link-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; }

@@ -23,7 +23,7 @@
 </article>
 
 <style>
-	.card { margin-bottom: 8px; overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
+	.card { overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
 	.rule-list { padding: 6px 0; }
 	.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; }
 	.row span { display: grid; gap: 1px; }

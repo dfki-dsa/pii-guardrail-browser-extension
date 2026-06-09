@@ -627,6 +627,18 @@ details[open] > .pg-code-disclosure-summary::before {
 /* Footer (sticky bottom row)                                         */
 /* ------------------------------------------------------------------ */
 
+.pg-disclaimer {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 20px;
+  background: var(--color-card);
+  border-top: var(--border-hairline);
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .pg-footer {
   flex-shrink: 0;
   display: flex;

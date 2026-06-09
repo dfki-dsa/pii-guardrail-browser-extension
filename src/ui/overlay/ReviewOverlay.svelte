@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { EntityType } from '../../shared/message-types';
+  import { LIMITS_DISCLAIMER } from '../../shared/project-links';
   import type { OverlayModel } from './overlay-model';
   import OverlayHeader from './components/OverlayHeader.svelte';
   import TextTabs from './components/TextTabs.svelte';
@@ -94,6 +95,8 @@
       {/if}
     </div>
 
+    <p class="pg-disclaimer">{LIMITS_DISCLAIMER}</p>
+
     <footer class="pg-footer">
       <div class="pg-footer-left">
         <button
@@ -111,7 +114,7 @@
           id="pg-confirm-btn"
           title="Enter"
           onclick={() => model.confirm()}
-        >Anonymize &amp; paste</button>
+        >Replace &amp; paste</button>
       </div>
     </footer>
 

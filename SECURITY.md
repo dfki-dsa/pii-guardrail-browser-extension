@@ -18,7 +18,13 @@ Do not include real personal data, secrets, private prompts, private responses, 
 
 ## Public Issues
 
-Use public GitHub Issues for non-sensitive bugs, compatibility reports, documentation issues, and feature requests. Keep examples synthetic or sanitized.
+GitHub Issues are **public** — anything you post is visible to anyone. Use them only for
+non-sensitive bugs, compatibility reports, documentation issues, and feature requests.
+
+**Do not post** real personal data, confidential documents, real prompts or responses,
+screenshots containing real data, secrets, or other sensitive content. Keep all examples
+**synthetic or sanitized**. For sensitive security or privacy reports, use the private channel
+above (`pii@dfki.de`). See `PRIVACY.md` for the full data-protection policy.
 
 ## Supported Versions
 

@@ -31,7 +31,7 @@
 </article>
 
 <style>
-	.card { margin-bottom: 8px; overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
+	.card { overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
 	.row, .link-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; }
 	.link-row { width: 100%; border: 0; background: transparent; color: var(--color-ink); cursor: pointer; }
 	.row-label { font-size: 13px; font-weight: 500; }

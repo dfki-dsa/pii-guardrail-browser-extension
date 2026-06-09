@@ -30,7 +30,7 @@
       class="pg-tab"
       class:pg-tab-active={active === 'anonymized'}
       onclick={() => (active = 'anonymized')}
-    >Anonymized <span class="pg-tab-badge">{replacedCount}</span></button>
+    >Replaced <span class="pg-tab-badge">{replacedCount}</span></button>
   </div>
   <div class="pg-card-body">
     {#if active === 'original'}

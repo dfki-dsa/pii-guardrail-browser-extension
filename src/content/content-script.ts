@@ -332,7 +332,7 @@ function showReviewOverlay(
         saveEntityMap(conversationUrl, entityMap.toStored());
 
         showIndicator(
-          `\u{1F512} ${approvedSpans.length} item(s) anonymized`,
+          `\u{1F512} ${approvedSpans.length} item(s) replaced`,
           CHIP_FADE_MS,
         );
 

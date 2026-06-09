@@ -14,7 +14,7 @@
 </article>
 
 <style>
-	.card { margin-bottom: 8px; overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
+	.card { overflow: hidden; border: var(--border-hairline); border-radius: var(--radius-lg); background: white; }
 	.stat-row { display: flex; }
 	.stat-row div { flex: 1; padding: 12px 8px; text-align: center; border-right: 1px solid var(--color-border); }
 	.stat-row div:last-child { border-right: 0; }

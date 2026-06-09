@@ -2,6 +2,7 @@
 	import type { Readable, Writable } from 'svelte/store';
 	import type { StatusPill } from '../popup-model.svelte';
 	import type { ResourceSummary } from '../../shared/popup-resource-summary';
+	import { AI_TRANSPARENCY_NOTICE } from '../../shared/project-links';
 
 	let { enabled, wasmStatus, nerStatus, cpuFallback, resourceSummary }: {
 		enabled: Writable<boolean>;
@@ -30,6 +31,8 @@
 	</span>
 </div>
 
+<p class="ai-notice" role="note">{AI_TRANSPARENCY_NOTICE}</p>
+
 {#if $resourceSummary}
 	<div class="resource-summary" data-tone={$resourceSummary.tone} role="status" aria-label="Local AI resource status">
 		<strong>{$resourceSummary.title}</strong>
@@ -43,7 +46,8 @@
 {/if}
 
 <style>
-	.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+	.pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+	.ai-notice { margin: 8px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
 	.pill { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: white; color: var(--color-ink); font-size: 11px; }
 	.dot { width: 5px; height: 5px; border-radius: 3px; background: var(--color-success); flex-shrink: 0; }
 	.dot.off, .dot.muted { background: #cbd5e1; }
@@ -51,7 +55,7 @@
 	.dot.ok { background: var(--color-success); }
 	.key { color: var(--color-muted); }
 	.value { overflow: hidden; font-family: var(--font-mono); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-	.resource-summary { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; padding: 10px 12px; border: 1px solid rgb(245 158 11 / 42%); border-radius: 10px; background: rgb(245 158 11 / 12%); color: #92400e; font-size: 12px; line-height: 1.35; }
+	.resource-summary { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid rgb(245 158 11 / 42%); border-radius: 10px; background: rgb(245 158 11 / 12%); color: #92400e; font-size: 12px; line-height: 1.35; }
 	.resource-summary strong { color: #b45309; font-size: 12px; }
 	.resource-summary[data-tone='critical'] { border-color: rgb(239 68 68 / 55%); background: rgb(239 68 68 / 12%); color: #991b1b; }
 	.resource-summary[data-tone='critical'] strong { color: #b91c1c; }

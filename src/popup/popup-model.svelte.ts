@@ -93,6 +93,8 @@ export type SettingsModel = {
   openIssueReport: () => void;
   openSecurityReport: () => void;
   openPrivacySupport: () => void;
+  openPrivacyPolicy: () => void;
+  openImpressum: () => void;
   setMinConfidence: (value: number) => Promise<void>;
   setDebug: (enabled: boolean) => Promise<void>;
   setClipboardInterceptEnabled: (enabled: boolean) => Promise<void>;
@@ -431,6 +433,8 @@ export function createAppModels(): AppModels {
       openIssueReport: () => openExternalUrl(PUBLIC_PROJECT_LINKS.newIssue),
       openSecurityReport: () => openExternalUrl(PUBLIC_PROJECT_LINKS.security),
       openPrivacySupport: () => openExternalUrl(PUBLIC_PROJECT_LINKS.support),
+      openPrivacyPolicy: () => openExternalUrl(PUBLIC_PROJECT_LINKS.privacy),
+      openImpressum: () => openExternalUrl(PUBLIC_PROJECT_LINKS.impressum),
       setMinConfidence: (value) => saveAndBroadcast({ minConfidence: value }),
       setDebug: async (value) => { await saveSettings({ debug: value }); debug.set(value); },
       setClipboardInterceptEnabled: (value) => saveAndBroadcast({ clipboardInterceptEnabled: value }),

@@ -181,7 +181,7 @@ describe('attachDeAnonBanner', () => {
     expect(host.shadowRoot).not.toBeNull();
     const revealBtn = host.shadowRoot!.getElementById('pg-reveal-btn') as HTMLButtonElement;
     const copyBtn = host.shadowRoot!.getElementById('pg-copy-btn') as HTMLButtonElement;
-    expect(host.shadowRoot!.querySelector('.pg-banner-text')?.textContent).toContain('4 anonymized items');
+    expect(host.shadowRoot!.querySelector('.pg-banner-text')?.textContent).toContain('4 replaced items');
 
     revealBtn.click();
 

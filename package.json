@@ -2,7 +2,7 @@
   "name": "privacy-guardrail",
   "version": "0.2.4",
   "private": true,
-  "description": "Chrome extension that anonymizes PII before pasting into LLM chats",
+  "description": "Chrome extension that detects and replaces PII before pasting into LLM chats",
   "scripts": {
     "build:wasm": "cd crate && cargo build --release --target wasm32-unknown-unknown && wasm-bindgen --target web --out-dir pkg --out-name privacy_guardrail_wasm target/wasm32-unknown-unknown/release/privacy_guardrail_wasm.wasm",
     "build:ext": "webpack --mode production",
