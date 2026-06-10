@@ -26,15 +26,15 @@ export function deriveResourceSummary(
     return {
       tone: 'critical',
       title: 'Local AI failed to load',
-      detail: 'Pattern detection remains active. Retry from Local AI settings.',
+      detail: 'Pattern detection remains active. Open System Compatibility in Settings to see the error and retry.',
     };
   }
 
   if (status.localAiState === 'off-low-memory-auto') {
     return {
       tone: 'critical',
-      title: 'Low memory protection mode',
-      detail: `Local AI is off because browser-reported memory is ${memoryWording(status)} (critical). Pattern detection remains active.`,
+      title: 'Low memory — local inference disabled',
+      detail: `Browser-reported memory is ${memoryWording(status)} (below the safe threshold). Local AI is off to protect browser stability. Pattern detection remains active. You can override this in System Compatibility settings.`,
     };
   }
 
@@ -42,7 +42,7 @@ export function deriveResourceSummary(
     return {
       tone: 'critical',
       title: 'Local AI enabled despite low memory',
-      detail: `Browser-reported memory is ${memoryWording(status)} (critical). Local AI may slow or freeze this browser.`,
+      detail: `Browser-reported memory is ${memoryWording(status)} (below the safe threshold). Keeping Local AI on may slow or freeze this browser. Turn it off in System Compatibility settings if you notice problems.`,
     };
   }
 

@@ -41,7 +41,7 @@
 {:else if $cpuFallback}
 	<div class="resource-summary" data-tone="warning" role="status">
 		<strong>Running on CPU fallback.</strong>
-		<span>WebGPU is unavailable, so local detection will be slower. Expect paste detection to take at least a couple of seconds.</span>
+		<span>WebGPU is unavailable on this device, so the model runs on CPU. Each scan may take 5–15 seconds depending on text length and hardware.</span>
 	</div>
 {/if}
 

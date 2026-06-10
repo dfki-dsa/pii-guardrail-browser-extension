@@ -199,7 +199,8 @@ describe('createAppModels — resource-safe popup', () => {
     await flushInit();
     const summary = get(app.protection.resourceSummary);
     expect(summary?.tone).toBe('critical');
-    expect(summary?.title).toMatch(/low memory protection mode/i);
+    expect(summary?.title).toMatch(/low memory/i);
+    expect(summary?.title).toMatch(/local inference disabled/i);
   });
 
   test('exposes a warning summary on warning tier with Local AI on', async () => {

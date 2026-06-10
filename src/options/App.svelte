@@ -8,15 +8,18 @@
 	import CancelDetectionCard from './components/CancelDetectionCard.svelte';
 	import CodeBlocksCard from './components/CodeBlocksCard.svelte';
 	import DebugSystemCheckCard from './components/DebugSystemCheckCard.svelte';
+	import OnboardingOverlay from './components/OnboardingOverlay.svelte';
 	import PublicSupportCard from './components/PublicSupportCard.svelte';
 	import SensitivityCard from './components/SensitivityCard.svelte';
 	import SystemCompatibilityCard from './components/SystemCompatibilityCard.svelte';
 	import VaultCard from './components/VaultCard.svelte';
+	import { hasSeenOnboarding, markOnboardingSeen } from '../shared/onboarding-state';
 
 	const model = createOptionsModel();
 	let allowlistCard: AllowlistCard | undefined = $state();
+	let showOnboarding = $state(false);
 
-	onMount(() => {
+	onMount(async () => {
 		const params = new URLSearchParams(window.location.search);
 		const prefill = params.get('allowlist');
 		if (prefill) {
@@ -31,8 +34,23 @@
 				document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 			});
 		}
+		const seen = await hasSeenOnboarding();
+		if (!seen) showOnboarding = true;
 	});
+
+	async function dismissOnboarding() {
+		showOnboarding = false;
+		await markOnboardingSeen();
+	}
+
+	function reopenOnboarding() {
+		showOnboarding = true;
+	}
 </script>
+
+{#if showOnboarding}
+	<OnboardingOverlay onDismiss={dismissOnboarding} />
+{/if}
 
 <div class="page">
 	<header class="page-header">
@@ -122,6 +140,12 @@
 			clearOverride={model.clearDebugSystemCheck}
 		/>
 	</main>
+
+	<footer class="page-footer">
+		<button type="button" class="onboarding-link" onclick={reopenOnboarding}>
+			Onboarding guide
+		</button>
+	</footer>
 </div>
 
 <style>
@@ -215,4 +239,24 @@
 	}
 
 	.content { padding: 0 24px; }
+
+	.page-footer {
+		padding: 12px 24px;
+		text-align: center;
+		border-top: var(--border-hairline);
+		margin-top: 8px;
+	}
+	.onboarding-link {
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--color-muted);
+		font-size: 12px;
+		cursor: pointer;
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+	.onboarding-link:hover {
+		color: var(--color-accent);
+	}
 </style>
