@@ -110,7 +110,7 @@ describe('Local AI release readiness: degraded states are visible', () => {
     expect(summary).toEqual({
       tone: 'critical',
       title: 'Local AI failed to load',
-      detail: 'Pattern detection remains active. Retry from Local AI settings.',
+      detail: 'Pattern detection remains active. Open System Compatibility in Settings to see the error and retry.',
     });
 
     const chipReason = deriveChipReason({ status });
