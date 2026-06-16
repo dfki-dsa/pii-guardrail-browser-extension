@@ -25,6 +25,7 @@ function setVersion(version, rootDir = process.cwd()) {
   const packagePath = path.join(rootDir, 'package.json');
   const lockPath = path.join(rootDir, 'package-lock.json');
   const manifestPath = path.join(rootDir, 'manifest.json');
+  const manifestFirefoxPath = path.join(rootDir, 'manifest.firefox.json');
 
   const packageJson = readJson(packagePath);
   const packageLock = readJson(lockPath);
@@ -40,6 +41,12 @@ function setVersion(version, rootDir = process.cwd()) {
   writeJson(packagePath, packageJson);
   writeJson(lockPath, packageLock);
   writeJson(manifestPath, manifest);
+
+  if (fs.existsSync(manifestFirefoxPath)) {
+    const manifestFirefox = readJson(manifestFirefoxPath);
+    manifestFirefox.version = version;
+    writeJson(manifestFirefoxPath, manifestFirefox);
+  }
 }
 
 function listReleaseFiles(rootDir) {
@@ -71,6 +78,9 @@ function checkVersion(options = {}) {
   const manifest = readJson(path.join(rootDir, 'manifest.json'));
   const changelog = fs.readFileSync(path.join(rootDir, 'CHANGELOG.md'), 'utf8');
 
+  const manifestFirefoxPath = path.join(rootDir, 'manifest.firefox.json');
+  const manifestFirefox = fs.existsSync(manifestFirefoxPath) ? readJson(manifestFirefoxPath) : null;
+
   const expectedVersion = options.expectedVersion || packageJson.version;
   const expectedTag = `v${expectedVersion}`;
   const errors = [];
@@ -87,6 +97,7 @@ function checkVersion(options = {}) {
     'package-lock.json': packageLock.version,
     'package-lock.json packages[""]': packageLock.packages?.['']?.version,
     'manifest.json': manifest.version,
+    ...(manifestFirefox ? { 'manifest.firefox.json': manifestFirefox.version } : {}),
   };
 
   for (const [label, actualVersion] of Object.entries(versions)) {

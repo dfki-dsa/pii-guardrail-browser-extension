@@ -6,8 +6,11 @@
   "scripts": {
     "build:wasm": "cd crate && cargo build --release --target wasm32-unknown-unknown && wasm-bindgen --target web --out-dir pkg --out-name privacy_guardrail_wasm target/wasm32-unknown-unknown/release/privacy_guardrail_wasm.wasm",
     "build:ext": "webpack --mode production",
+    "build:ext:firefox": "BROWSER=firefox webpack --mode production",
+    "build:firefox": "npm run build:wasm && npm run build:ext:firefox",
     "build": "npm run build:wasm && npm run build:ext",
     "dev": "webpack --mode development --watch",
+    "dev:firefox": "BROWSER=firefox webpack --mode development --watch",
     "prepare:model:ai4privacy": "node scripts/prepare-ai4privacy-model.js",
     "prepare:model:bardsai": "node scripts/prepare-bardsai-model.js",
     "prepare:model:hikmaai": "node scripts/prepare-hikmaai-model.js",
@@ -57,5 +60,6 @@
   },
   "dependencies": {
     "@huggingface/transformers": "4.2.0"
-  }
+  },
+  "packageManager": "yarn@4.12.0+sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8"
 }
