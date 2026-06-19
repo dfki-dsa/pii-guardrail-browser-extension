@@ -95,6 +95,12 @@ type TransformersModule = {
   ) => Promise<TokenClassificationPipeline>;
 };
 
+interface NavigatorWithWebGpu extends Navigator {
+  gpu?: {
+    requestAdapter?: () => Promise<unknown>;
+  };
+}
+
 interface TransformersProviderOptions {
   modelKey?: NerModelKey;
   loadTransformers?: () => Promise<TransformersModule>;
@@ -577,13 +583,29 @@ async function defaultLoadTransformers(): Promise<TransformersModule> {
   ) as Promise<TransformersModule>;
 }
 
-export async function defaultDetectWebGpu(): Promise<boolean> {
+async function probeCurrentWebGpu(): Promise<boolean> {
+  const gpu = (globalThis.navigator as NavigatorWithWebGpu | undefined)?.gpu;
+  if (!gpu) return false;
+  if (typeof gpu.requestAdapter !== 'function') return true;
+
   try {
-    const systemCheck = await loadSystemCheckResult();
-    return systemCheck?.webGpu === 'available';
+    return Boolean(await gpu.requestAdapter());
   } catch {
     return false;
   }
+}
+
+export async function defaultDetectWebGpu(): Promise<boolean> {
+  try {
+    const systemCheck = await loadSystemCheckResult();
+    if (systemCheck?.webGpu === 'available') return true;
+  } catch {
+    // Fall through to a current runtime probe. The stored check can be absent,
+    // stale, or temporarily unreadable, but the backend choice needs to match
+    // the browser session that is loading the model.
+  }
+
+  return probeCurrentWebGpu();
 }
 
 async function assertRequiredAssetsAvailable(

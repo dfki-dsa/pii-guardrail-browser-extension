@@ -103,6 +103,70 @@ describe('transformers NER provider', () => {
     }
   });
 
+  test('probes current WebGPU when stored compatibility is unavailable', async () => {
+    const requestAdapter = jest.fn().mockResolvedValue({});
+    const originalNavigator = globalThis.navigator;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: jest.fn().mockResolvedValue({
+            [SYSTEM_CHECK_STORAGE_KEY]: buildSystemCheckResult(
+              { browserMemoryGb: 32, webGpu: 'unavailable' },
+              123
+            ),
+          }),
+        },
+      },
+    };
+
+    try {
+      await expect(defaultDetectWebGpu()).resolves.toBe(true);
+
+      expect(requestAdapter).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: originalNavigator,
+      });
+    }
+  });
+
+  test('keeps CPU fallback when stored compatibility and current probe both lack WebGPU', async () => {
+    const requestAdapter = jest.fn().mockResolvedValue(null);
+    const originalNavigator = globalThis.navigator;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: jest.fn().mockResolvedValue({
+            [SYSTEM_CHECK_STORAGE_KEY]: buildSystemCheckResult(
+              { browserMemoryGb: 32, webGpu: 'unavailable' },
+              123
+            ),
+          }),
+        },
+      },
+    };
+
+    try {
+      await expect(defaultDetectWebGpu()).resolves.toBe(false);
+
+      expect(requestAdapter).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: originalNavigator,
+      });
+    }
+  });
+
   test('configures Transformers.js for local-only extension assets and q4f16 WASM fallback', async () => {
     const onnxWasm: any = { wasmPaths: { mjs: 'cdn://stale.mjs', wasm: 'cdn://stale.wasm' } };
     const env: any = {
