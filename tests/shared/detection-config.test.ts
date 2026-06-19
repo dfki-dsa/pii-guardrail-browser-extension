@@ -11,7 +11,7 @@ describe('detection config from settings', () => {
       contextWindow: 9,
       nerProvider: 'fixture' as const,
       nerModel: 'hikmaai' as const,
-      nerWebGpuDtype: 'fp16' as const,
+      nerWebGpuDtype: 'q4f16' as const,
     };
     const config = detectionOptionsFromSettings(overrides);
 
@@ -24,7 +24,7 @@ describe('detection config from settings', () => {
         context_window: 9,
         ner_provider: 'fixture',
         ner_model: 'hikmaai',
-        ner_webgpu_dtype: 'fp16',
+        ner_webgpu_dtype: 'q4f16',
         ner_enabled: true,
       })
     );

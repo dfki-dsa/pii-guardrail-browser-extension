@@ -89,7 +89,7 @@ module.exports = (_env = {}) => {
       new CopyPlugin({
         patterns: [
           { from: 'manifest.json', to: '.' },
-          { from: 'src/assets', to: 'assets' },
+          { from: 'src/assets', to: 'assets', globOptions: { ignore: ['**/.DS_Store'] } },
           { from: 'src/assets/fonts', to: 'fonts' },
           { from: 'src/ui/banner/de-anon-banner.css', to: 'ui/banner/' },
           // Copy the generated wasm-bindgen binary asset for runtime loading.

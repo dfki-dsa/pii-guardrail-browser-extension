@@ -8,15 +8,8 @@ const PREPARED_BARDSAI_MODEL_SOURCE_DIR = path.join(
   'ner',
   'bardsai-eu-pii-anonimization-multilang'
 );
-const PREPARED_HIKMAAI_MODEL_SOURCE_DIR = path.join(
-  'generated',
-  'models',
-  'ner',
-  'hikmaai-distilbert-pii'
-);
 const PACKAGED_MODEL_DIR = 'models/ner/ai4privacy';
 const PACKAGED_BARDSAI_MODEL_DIR = 'models/ner/bardsai-eu-pii-anonimization-multilang';
-const PACKAGED_HIKMAAI_MODEL_DIR = 'models/ner/hikmaai-distilbert-pii';
 const PACKAGED_ONNX_RUNTIME_DIR = 'vendor/onnxruntime-web';
 const ACTIVE_PREPARED_MODEL_SOURCE_DIR = PREPARED_BARDSAI_MODEL_SOURCE_DIR;
 const ACTIVE_PACKAGED_MODEL_DIR = PACKAGED_BARDSAI_MODEL_DIR;
@@ -25,35 +18,34 @@ const REQUIRED_MODEL_ASSETS = [
   'config.json',
   'tokenizer.json',
   'tokenizer_config.json',
-  path.join('onnx', 'model_quantized.onnx'),
-  // Both WebGPU artifacts ship as ONNX external data (graph protobuf +
-  // sidecar weights): an embedded-weight protobuf makes ORT's session init
-  // copy all weights through the (never-shrinking) wasm heap several times.
-  // WebGPU default: q4f16.
+  // CPU/WASM fallback and WebGPU default: q4f16 external data.
   path.join('onnx', 'model_q4f16.onnx'),
   path.join('onnx', 'model_q4f16.onnx.data'),
-  // WebGPU "maximum accuracy" option, selectable from the options page.
-  path.join('onnx', 'model_fp16.onnx'),
-  path.join('onnx', 'model_fp16.onnx.data'),
 ];
 
-// Conversion inputs/intermediates that may sit next to the prepared model
-// assets but must never ship in the extension. The q4f16 conversion writes a
-// 530 MB fp16 intermediate next to the real artifacts.
-const EXCLUDED_MODEL_ASSET_GLOBS = ['**/model_fp16.q4f16-intermediate.onnx'];
+// Conversion inputs/intermediates and inactive artifacts that may sit next to
+// the prepared model assets but must never ship in the extension.
+const EXCLUDED_MODEL_ASSET_GLOBS = [
+  '**/model_fp16.q4f16-intermediate.onnx',
+  '**/model_fp16.onnx',
+  '**/model_fp16.onnx.data',
+  '**/*conversion-manifest.json',
+  '**/model_fp16-external-data-manifest.json',
+  '**/manifest.json',
+  '**/model_quantized.onnx',
+];
 
 const ONNX_RUNTIME_ASSETS = [
   // CPU/WASM path: ner-provider.ts pins wasmPaths to these when the
-  // selected device is 'wasm'. The non-asyncify build runs the SIMD
-  // INT8 kernels correctly; the asyncify build was producing degraded
-  // INT8 logits on some Chrome+CPU combos.
+  // selected device is 'wasm'. The non-asyncify build has the known-good
+  // CPU behavior; the asyncify build was producing degraded logits on some
+  // Chrome+CPU combos.
   'ort-wasm-simd-threaded.mjs',
   'ort-wasm-simd-threaded.wasm',
   // WebGPU path: ort.webgpu.bundle.min.mjs (bundled inside transformers.js
   // v4) only references the asyncify wasm pair, which is the build that
-  // exports `webgpuInit`. The INT8-degradation concern doesn't apply on
-  // the WebGPU path since matmuls run on the GPU; the wasm is only
-  // orchestration.
+  // exports `webgpuInit`. The CPU degradation concern doesn't apply on the
+  // WebGPU path since matmuls run on the GPU; the wasm is only orchestration.
   'ort-wasm-simd-threaded.asyncify.mjs',
   'ort-wasm-simd-threaded.asyncify.wasm',
 ];
@@ -97,11 +89,6 @@ function getNerAssetCopyPatterns(rootDir = process.cwd()) {
       to: ACTIVE_PACKAGED_MODEL_DIR,
       noErrorOnMissing: true,
       globOptions: { ignore: EXCLUDED_MODEL_ASSET_GLOBS },
-    },
-    {
-      from: resolveFromRoot(rootDir, PREPARED_HIKMAAI_MODEL_SOURCE_DIR),
-      to: PACKAGED_HIKMAAI_MODEL_DIR,
-      noErrorOnMissing: true,
     },
     ...ONNX_RUNTIME_ASSETS.map((fileName) => ({
       from: resolveFromRoot(rootDir, path.join('node_modules', 'onnxruntime-web', 'dist', fileName)),
@@ -155,11 +142,9 @@ module.exports = {
   LocalNerAssetsPlugin,
   ONNX_RUNTIME_ASSETS,
   PACKAGED_BARDSAI_MODEL_DIR,
-  PACKAGED_HIKMAAI_MODEL_DIR,
   PACKAGED_MODEL_DIR,
   PACKAGED_ONNX_RUNTIME_DIR,
   PREPARED_BARDSAI_MODEL_SOURCE_DIR,
-  PREPARED_HIKMAAI_MODEL_SOURCE_DIR,
   PREPARED_MODEL_SOURCE_DIR,
   REQUIRED_MODEL_ASSETS,
   getNerAssetCopyPatterns,

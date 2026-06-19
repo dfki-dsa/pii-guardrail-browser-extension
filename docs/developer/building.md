@@ -64,7 +64,7 @@ npm run prepare:model:bardsai -- \
   --force
 ```
 
-Then produce the WebGPU artifacts (fp16 external-data repackaging and the q4f16 quantization):
+Then produce the runtime artifacts (fp16 external-data repackaging and the q4f16 quantization):
 
 ```bash
 npm run convert:model:external-data -- --model bardsai-fp16
@@ -84,14 +84,13 @@ generated/models/ner/bardsai-eu-pii-anonimization-multilang/
   config.json
   tokenizer.json
   tokenizer_config.json
-  onnx/model_quantized.onnx
   onnx/model_q4f16.onnx
   onnx/model_q4f16.onnx.data
   onnx/model_fp16.onnx
   onnx/model_fp16.onnx.data
 ```
 
-Webpack copies those files into `dist/models/ner/bardsai-eu-pii-anonimization-multilang/` and copies the required ONNX Runtime Web files into `dist/vendor/onnxruntime-web/`.
+Webpack copies those files into `dist/models/ner/bardsai-eu-pii-anonimization-multilang/`, excludes the inactive q8 `model_quantized.onnx` artifact if it exists in `generated/`, and copies the required ONNX Runtime Web files into `dist/vendor/onnxruntime-web/`.
 
 See `docs/developer/model-assets.md` for source download, conversion, and licensing notes.
 

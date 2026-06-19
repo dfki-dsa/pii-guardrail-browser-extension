@@ -7,9 +7,7 @@ const {
   ACTIVE_PREPARED_MODEL_SOURCE_DIR,
   LocalNerAssetsPlugin,
   ONNX_RUNTIME_ASSETS,
-  PACKAGED_HIKMAAI_MODEL_DIR,
   PACKAGED_ONNX_RUNTIME_DIR,
-  PREPARED_HIKMAAI_MODEL_SOURCE_DIR,
   getNerAssetCopyPatterns,
   missingOnnxRuntimeAssets,
   missingPreparedModelAssets,
@@ -26,11 +24,8 @@ function writePreparedModel(root) {
   writeFile(path.join(modelRoot, 'config.json'), '{}\n');
   writeFile(path.join(modelRoot, 'tokenizer.json'), '{}\n');
   writeFile(path.join(modelRoot, 'tokenizer_config.json'), '{}\n');
-  writeFile(path.join(modelRoot, 'onnx', 'model_quantized.onnx'), 'onnx');
   writeFile(path.join(modelRoot, 'onnx', 'model_q4f16.onnx'), 'q4f16');
   writeFile(path.join(modelRoot, 'onnx', 'model_q4f16.onnx.data'), 'q4f16-data');
-  writeFile(path.join(modelRoot, 'onnx', 'model_fp16.onnx'), 'fp16');
-  writeFile(path.join(modelRoot, 'onnx', 'model_fp16.onnx.data'), 'fp16-data');
 }
 
 function writeOnnxRuntime(root) {
@@ -84,11 +79,8 @@ describe('extension NER asset packaging', () => {
       'config.json',
       'tokenizer.json',
       'tokenizer_config.json',
-      'onnx/model_quantized.onnx',
       'onnx/model_q4f16.onnx',
       'onnx/model_q4f16.onnx.data',
-      'onnx/model_fp16.onnx',
-      'onnx/model_fp16.onnx.data',
     ]);
 
     writePreparedModel(tempRoot);
@@ -110,14 +102,19 @@ describe('extension NER asset packaging', () => {
           from: path.join(tempRoot, ACTIVE_PREPARED_MODEL_SOURCE_DIR),
           to: ACTIVE_PACKAGED_MODEL_DIR,
           noErrorOnMissing: true,
-          // Only the q4f16 conversion intermediate must not ship — the real
-          // model_fp16.onnx is a selectable WebGPU artifact and must pass.
-          globOptions: { ignore: ['**/model_fp16.q4f16-intermediate.onnx'] },
-        }),
-        expect.objectContaining({
-          from: path.join(tempRoot, PREPARED_HIKMAAI_MODEL_SOURCE_DIR),
-          to: PACKAGED_HIKMAAI_MODEL_DIR,
-          noErrorOnMissing: true,
+          // Only the q4f16 runtime model ships; conversion intermediates and
+          // inactive q8/fp16 artifacts must be filtered out.
+          globOptions: {
+            ignore: [
+              '**/model_fp16.q4f16-intermediate.onnx',
+              '**/model_fp16.onnx',
+              '**/model_fp16.onnx.data',
+              '**/*conversion-manifest.json',
+              '**/model_fp16-external-data-manifest.json',
+              '**/manifest.json',
+              '**/model_quantized.onnx',
+            ],
+          },
         }),
         runtimeFile('ort-wasm-simd-threaded.mjs'),
         runtimeFile('ort-wasm-simd-threaded.wasm'),
@@ -135,8 +132,6 @@ describe('extension NER asset packaging', () => {
 
     expect(resources).toEqual(
       expect.arrayContaining([
-        'models/ner/hikmaai-distilbert-pii/*',
-        'models/ner/hikmaai-distilbert-pii/onnx/*',
         'models/ner/bardsai-eu-pii-anonimization-multilang/*',
         'models/ner/bardsai-eu-pii-anonimization-multilang/onnx/*',
         'vendor/onnxruntime-web/*',
@@ -145,6 +140,7 @@ describe('extension NER asset packaging', () => {
     expect(resources).not.toEqual(
       expect.arrayContaining([
         'models/ner/ai4privacy/*',
+        'models/ner/hikmaai-distilbert-pii/*',
       ])
     );
   });

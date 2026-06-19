@@ -60,8 +60,6 @@
       "resources": [
         "wasm/*.wasm",
         "offscreen/offscreen.html",
-        "models/ner/hikmaai-distilbert-pii/*",
-        "models/ner/hikmaai-distilbert-pii/onnx/*",
         "models/ner/bardsai-eu-pii-anonimization-multilang/*",
         "models/ner/bardsai-eu-pii-anonimization-multilang/onnx/*",
         "vendor/onnxruntime-web/*"

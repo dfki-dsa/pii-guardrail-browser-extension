@@ -42,7 +42,7 @@ export type NerDtype = 'q8' | 'fp16' | 'q4f16';
  * WebGPU artifact choices exposed on the options page. Order matters for the
  * UI: the low-memory default comes first.
  */
-export const NER_WEBGPU_DTYPE_CHOICES: readonly NerWebGpuDtype[] = ['q4f16', 'fp16'];
+export const NER_WEBGPU_DTYPE_CHOICES: readonly NerWebGpuDtype[] = ['q4f16'];
 
 /**
  * External-data companion file for an ONNX artifact whose weights live outside
@@ -75,9 +75,11 @@ export interface NerModelDefinition {
   modelId: string;
   assetBasePath: string;
   requiredAssets: readonly string[];
+  /** ONNX dtype used for the browser CPU/WASM path. Defaults to q8 for older models. */
+  wasmDtype?: NerDtype;
   /** Default WebGPU dtype when the user expressed no preference. */
   webGpuDtype?: NerDtype;
-  /** Curated WebGPU artifacts, keyed by dtype. */
+  /** Curated non-q8 artifacts, keyed by dtype. */
   webGpuArtifacts?: Partial<Readonly<Record<NerDtype, NerWebGpuArtifact>>>;
 }
 
@@ -107,14 +109,15 @@ export const NER_MODELS: readonly NerModelDefinition[] = [
       'models/ner/bardsai-eu-pii-anonimization-multilang/tokenizer_config.json',
       'models/ner/bardsai-eu-pii-anonimization-multilang/onnx/model_quantized.onnx',
     ],
-    // Both WebGPU artifacts ship as ONNX external data: an embedded-weights
+    // The active CPU/WebGPU artifacts ship as ONNX external data: an embedded-weights
     // protobuf forces ORT to copy all weights through the wasm heap several
     // times during session init (JS fetch buffer, wasm-heap copy,
     // protobuf-parsed initializers, optimizer copies) and wasm memory never
     // shrinks — with the 555 MB embedded fp16 build the offscreen document
     // sat at multiple GB afterwards. With external data the parsed graph is
     // ~330 KB and the weight buffer is handed to ORT separately and uploaded
-    // to the GPU.
+    // to the selected execution provider.
+    wasmDtype: 'q4f16',
     webGpuDtype: 'q4f16',
     webGpuArtifacts: {
       q4f16: {
@@ -129,21 +132,6 @@ export const NER_MODELS: readonly NerModelDefinition[] = [
           {
             path: 'model_q4f16.onnx.data',
             data: 'onnx/model_q4f16.onnx.data',
-          },
-        ],
-      },
-      fp16: {
-        requiredAssets: [
-          'models/ner/bardsai-eu-pii-anonimization-multilang/config.json',
-          'models/ner/bardsai-eu-pii-anonimization-multilang/tokenizer.json',
-          'models/ner/bardsai-eu-pii-anonimization-multilang/tokenizer_config.json',
-          'models/ner/bardsai-eu-pii-anonimization-multilang/onnx/model_fp16.onnx',
-          'models/ner/bardsai-eu-pii-anonimization-multilang/onnx/model_fp16.onnx.data',
-        ],
-        externalData: [
-          {
-            path: 'model_fp16.onnx.data',
-            data: 'onnx/model_fp16.onnx.data',
           },
         ],
       },
@@ -269,9 +257,7 @@ export const DEFAULT_SETTINGS: Settings = {
   blocklist: [],
   nerProvider: 'transformers',
   nerModel: DEFAULT_NER_MODEL,
-  // Low-memory default: the q4f16 external-data artifact keeps the offscreen
-  // document around 1 GB while loaded. Users who accept the multi-GB RAM cost
-  // of the fp16 embedded-weight artifact opt in from the options page.
+  // q4f16 external data keeps the offscreen document around 1 GB while loaded.
   nerWebGpuDtype: 'q4f16',
   groupsEnabled: defaultGroupsEnabled(),
   // The vault is enabled by default; consistency across sessions is the

@@ -248,12 +248,12 @@ describe('offscreen detection flow', () => {
     );
   });
 
-  test('forwards the WebGPU dtype preference from config to the provider factory', async () => {
+  test('forwards the q4f16 WebGPU dtype preference from config to the provider factory', async () => {
     const text = 'John Smith lives in Berlin.';
     const config = {
       ner_provider: 'transformers' as const,
       ner_model: 'bardsai' as const,
-      ner_webgpu_dtype: 'fp16' as const,
+      ner_webgpu_dtype: 'q4f16' as const,
       ner_enabled: true,
     };
     const bardsAiProvider: NerProvider = {
@@ -268,7 +268,7 @@ describe('offscreen detection flow', () => {
 
     await detectWithExternalNer(text, config);
 
-    expect(providerFactory).toHaveBeenCalledWith('transformers', 'bardsai', 'fp16');
+    expect(providerFactory).toHaveBeenCalledWith('transformers', 'bardsai', 'q4f16');
   });
 
   test('does not fall back to deprecated transformer models when the standard model is unavailable', async () => {

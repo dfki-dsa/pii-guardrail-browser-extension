@@ -16,14 +16,13 @@ Required release assets:
 config.json
 tokenizer.json
 tokenizer_config.json
-onnx/model_quantized.onnx
 onnx/model_q4f16.onnx
 onnx/model_q4f16.onnx.data
 onnx/model_fp16.onnx
 onnx/model_fp16.onnx.data
 ```
 
-Both WebGPU artifacts (`model_q4f16` and `model_fp16`) ship in ONNX external-data format: a small graph protobuf plus a `.onnx.data` weights sidecar. Embedded-weight protobufs force ONNX Runtime to copy all weights through the never-shrinking wasm heap during session init, which held multiple GB of RAM until the offscreen document closed.
+Both shipped transformer artifacts (`model_q4f16` and `model_fp16`) use ONNX external-data format: a small graph protobuf plus a `.onnx.data` weights sidecar. Embedded-weight protobufs force ONNX Runtime to copy all weights through the never-shrinking wasm heap during session init, which held multiple GB of RAM until the offscreen document closed. The q4f16 artifact is used for CPU/WASM fallback and as the default WebGPU model; the q8 `model_quantized.onnx` artifact is not packaged for the active release model.
 
 The generated directory is ignored by Git. Prepared model assets are release artifacts, not source files.
 
@@ -68,7 +67,7 @@ npm run prepare:model:bardsai -- \
   --force
 ```
 
-The prep script verifies tokenizer metadata, copies tokenizer files, copies or creates `model_quantized.onnx`, copies or creates `model_fp16.onnx`, and writes an asset manifest.
+The prep script verifies tokenizer metadata, copies tokenizer files, copies or creates `model_quantized.onnx` as a generated comparison/byproduct artifact, copies or creates `model_fp16.onnx`, and writes an asset manifest. Release packaging excludes `model_quantized.onnx`; q4f16 is the active CPU/WASM fallback.
 
 Repackage the embedded fp16 model as ONNX external data (in place, under `generated/models`):
 
@@ -78,7 +77,7 @@ npm run convert:model:external-data -- --model bardsai-fp16
 
 Pass `--force` to overwrite an existing `model_fp16.onnx.data`. The script verifies that the `location` recorded inside the protobuf matches the file name the runtime passes to ONNX Runtime (`session_options.externalData` in `src/shared/constants.ts`) and runs the ONNX checker on the result.
 
-Generate the experimental q4f16 WebGPU artifact pair:
+Generate the q4f16 artifact pair:
 
 ```bash
 npm run convert:model:q4f16:bardsai

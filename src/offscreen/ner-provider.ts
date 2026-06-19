@@ -111,9 +111,9 @@ interface TransformersProviderOptions {
   deviceOverride?: NerInferenceDevice;
   /**
    * User preference for the WebGPU artifact (options page). Consulted only
-   * when the resolved device is 'webgpu' — the wasm fallback always runs q8.
-   * Unlike `dtypeOverride` this never forces an artifact onto the wrong
-   * device path.
+   * when the resolved device is 'webgpu' — the wasm fallback uses the model's
+   * low-memory CPU dtype. Unlike `dtypeOverride` this never forces a
+   * user-selected WebGPU artifact onto the CPU path.
    */
   webGpuDtypePreference?: NerWebGpuDtype;
 }
@@ -134,7 +134,8 @@ export interface NerChunkingOptions {
 const MODEL_ASSET_ROOT = 'models/';
 const ONNX_RUNTIME_ASSET_ROOT = 'vendor/onnxruntime-web/';
 const REQUIRED_RUNTIME_ASSETS = [
-  // CPU/WASM path uses the non-asyncify build (correct INT8 SIMD logits).
+  // CPU/WASM path uses the non-asyncify build; it has the known-good CPU
+  // behavior from the q8 fallback path and avoids the asyncify CPU regression.
   'vendor/onnxruntime-web/ort-wasm-simd-threaded.mjs',
   'vendor/onnxruntime-web/ort-wasm-simd-threaded.wasm',
   // WebGPU path requires the asyncify build — that's the one that exports
@@ -647,9 +648,9 @@ function configureTransformersEnvironment(
   const runtimeRoot = getExtensionUrl(ONNX_RUNTIME_ASSET_ROOT);
   // The asyncify build is the one that exports `webgpuInit` and that
   // ort.webgpu.bundle.min.mjs (bundled in transformers.js v4) references —
-  // it is required for the WebGPU EP. The non-asyncify build runs the
-  // SIMD-accelerated INT8 kernels correctly on the WASM CPU path; the
-  // asyncify variant previously produced silently degraded logits there.
+  // it is required for the WebGPU EP. The non-asyncify build has the
+  // known-good CPU behavior; the asyncify variant previously produced
+  // silently degraded logits there.
   // So pick per device.
   const wasmFile =
     device === 'webgpu'
@@ -674,12 +675,12 @@ function configureTransformersEnvironment(
   });
 }
 
-function dtypeForDevice(
+export function dtypeForDevice(
   model: NerModelDefinition,
   device: NerInferenceDevice,
   webGpuDtypePreference?: NerWebGpuDtype
 ): NerDtype {
-  if (device !== 'webgpu') return 'q8';
+  if (device !== 'webgpu') return model.wasmDtype ?? 'q8';
   return webGpuDtypePreference ?? model.webGpuDtype ?? 'q8';
 }
 
@@ -946,10 +947,10 @@ export function createTransformersNerProvider(
     device: NerInferenceDevice,
     dtype: NerDtype
   ): Promise<TokenClassificationPipeline> {
-    // External weight buffers are only passed on the WebGPU path. In Node
-    // (benchmark harness) the model file is loaded by path and ONNX Runtime
-    // resolves the .data file from the same directory itself.
-    const externalData = device === 'webgpu' ? externalDataForDtype(model, dtype) : undefined;
+    // Browser builds need external-data sidecars fetched and attached for any
+    // device. In Node, Transformers.js keeps string paths when possible so the
+    // benchmark harness can still let ONNX Runtime resolve local sidecars.
+    const externalData = externalDataForDtype(model, dtype);
     return transformers.pipeline('token-classification', model.modelId, {
       dtype,
       local_files_only: true,

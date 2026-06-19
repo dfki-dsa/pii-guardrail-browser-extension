@@ -44,7 +44,7 @@ Pattern-based detection can still run when Local AI is off or unavailable, but c
 - Try pasting a shorter section.
 - Close unused tabs or apps.
 - Check whether the extension is using CPU/WASM fallback instead of WebGPU.
-- If you selected the full-precision (fp16) GPU model, switch back to the default 4-bit (q4f16) model in the model picker to reduce memory use.
+- If you selected the full-precision (fp16) WebGPU model, switch back to the default 4-bit (q4f16) model in the model picker to reduce memory use.
 - If Local AI is still too heavy, turn off active-page warmup or turn Local AI detection off in options. Pattern detection continues to run.
 
 ## Unsupported Site Expectations

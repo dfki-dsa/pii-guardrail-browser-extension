@@ -10,7 +10,7 @@ import {
   nerModelDefinitionFor,
 } from '../shared/constants';
 import type { DetectionOptions, NerModelKey, NerStatus, PiiSpan } from '../shared/message-types';
-import { requiredAssetsForDtype, type NerProvider } from '../offscreen/ner-provider';
+import { dtypeForDevice, requiredAssetsForDtype, type NerProvider } from '../offscreen/ner-provider';
 import { createBenchmarkReport, formatBenchmarkReport } from './reporting';
 
 export interface BenchmarkCliOptions {
@@ -81,7 +81,7 @@ Usage:
 Options:
   --corpus <path>     Benchmark JSONL corpus. Default: ${DEFAULT_CORPUS_PATH}
   --model <key>       Transformer model to run: ${NER_MODELS.map((model) => model.key).join(', ')}. Default: ${DEFAULT_NER_MODEL}
-  --dtype <dtype>     ONNX artifact to load: ${Object.keys(NER_DTYPE_FILE_SUFFIX).join(', ')}. Default: q8 (the WASM-path artifact).
+  --dtype <dtype>     ONNX artifact to load: ${Object.keys(NER_DTYPE_FILE_SUFFIX).join(', ')}. Default: the model's CPU-path artifact (${defaultBenchmarkDtype()} for ${DEFAULT_NER_MODEL}).
   --regex-only        Disable NER and run the final WASM regex/merge path only.
   --out <path>        Optional JSON output path for the raw detection run.
   --help              Show this help.
@@ -154,7 +154,7 @@ export function createBenchmarkDetectionConfig(options: {
 export function validateBenchmarkModelAssets(
   rootDir: string,
   modelKey: NerModelKey,
-  dtype: NerDtype = 'q8'
+  dtype: NerDtype = defaultBenchmarkDtype(modelKey)
 ): void {
   const model = nerModelDefinitionFor(modelKey);
   const missing = [
@@ -180,7 +180,7 @@ export async function runBenchmarkDetection(
   const rootDir = options.rootDir ?? process.cwd();
   const model = options.model ?? DEFAULT_NER_MODEL;
   const regexOnly = Boolean(options.regexOnly);
-  if (!regexOnly) validateBenchmarkModelAssets(rootDir, model, options.dtype ?? 'q8');
+  if (!regexOnly) validateBenchmarkModelAssets(rootDir, model, options.dtype ?? defaultBenchmarkDtype(model));
 
   installNodeBenchmarkShims(rootDir);
   if (!options.detector) await configureNodeNerProviderFactory(options.dtype);
@@ -248,6 +248,10 @@ function parseDtype(value: string): NerDtype {
     throw new Error(`Unknown dtype "${value}". Supported dtypes: ${dtypes.join(', ')}.`);
   }
   return dtype;
+}
+
+function defaultBenchmarkDtype(modelKey: NerModelKey = DEFAULT_NER_MODEL): NerDtype {
+  return dtypeForDevice(nerModelDefinitionFor(modelKey), 'cpu');
 }
 
 /**

@@ -81,15 +81,15 @@ describe('settings storage', () => {
     );
   });
 
-  test('persists the maximum-accuracy WebGPU dtype preference', async () => {
+  test('normalizes obsolete WebGPU dtype preferences to q4f16 on save', async () => {
     (chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
       pg_settings: DEFAULT_SETTINGS,
     });
 
-    await saveSettings({ nerWebGpuDtype: 'fp16' });
+    await saveSettings({ nerWebGpuDtype: 'fp16' as never });
 
     expect(chrome.storage.local.set).toHaveBeenCalledWith({
-      pg_settings: expect.objectContaining({ nerWebGpuDtype: 'fp16' }),
+      pg_settings: expect.objectContaining({ nerWebGpuDtype: 'q4f16' }),
     });
   });
 

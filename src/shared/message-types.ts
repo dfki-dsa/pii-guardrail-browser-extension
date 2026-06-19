@@ -78,13 +78,10 @@ export type NerRuntimeState = 'idle' | 'unavailable' | 'loading' | 'ready' | 'fa
 // wasm EP); the extension itself runs 'wasm' or 'webgpu'.
 export type NerInferenceDevice = 'wasm' | 'webgpu' | 'cpu';
 /**
- * User-selectable ONNX artifact for the WebGPU device path. Both ship as
- * ONNX external data. 'q4f16' is the low-memory default; 'fp16' costs a bit
- * more RAM and roughly twice the GPU memory for slightly better recall on
- * some structured types. The WASM fallback always runs the q8 artifact
- * regardless of this preference.
+ * User-selectable ONNX artifact for the WebGPU device path. q4f16 is the only
+ * packaged runtime artifact and is also used by the WASM fallback.
  */
-export type NerWebGpuDtype = 'q4f16' | 'fp16';
+export type NerWebGpuDtype = 'q4f16';
 export type BrowserMemoryTier = 'critical' | 'warning' | 'ok' | 'unknown';
 export type WebGpuAvailability = 'available' | 'unavailable' | 'unknown';
 export type LocalAiProtectionState =
@@ -116,7 +113,7 @@ export interface NerStatus {
 export interface DetectionOptions extends Partial<PipelineConfig> {
   ner_provider?: NerProviderMode;
   ner_model?: NerModelKey;
-  /** WebGPU artifact preference — ignored on the wasm fallback path. */
+  /** WebGPU precision preference — ignored on the wasm fallback path. */
   ner_webgpu_dtype?: NerWebGpuDtype;
 }
 
@@ -349,7 +346,7 @@ export interface Settings {
   nerProvider: NerProviderMode;
   nerModel: NerModelKey;
   /** ONNX artifact used when Local AI runs on WebGPU. The wasm fallback
-   *  always uses the q8 artifact, so this only matters on capable GPUs. */
+   *  uses the model's low-memory CPU artifact, so this only matters on capable GPUs. */
   nerWebGpuDtype: NerWebGpuDtype;
   groupsEnabled: Record<GroupName, boolean>;
   /** Default replacement mode applied to records whose own

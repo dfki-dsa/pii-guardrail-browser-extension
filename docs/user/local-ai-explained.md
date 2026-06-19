@@ -13,14 +13,14 @@ The public beta package uses local model assets bundled with the extension when 
 
 Local AI may use WebGPU when Chrome and the device support it. If WebGPU is unavailable, the extension can use a CPU/WASM path. The CPU/WASM path can be slower, especially on large pastes or lower-memory devices.
 
-## GPU Model Precision
+## Model Precision
 
-When Local AI runs on the GPU (WebGPU), the model picker in the popup and options page offers two builds of the detection model:
+The model picker in the popup and options page offers two builds of the detection model:
 
-- **q4f16 (default):** a compact 4-bit model that keeps Local AI around 1 GB of RAM while loaded.
-- **fp16:** the full-precision model. It uses slightly more RAM and roughly twice the GPU memory for slightly better detection of some structured values.
+- **q4f16 (default):** a compact 4-bit model that keeps Local AI around 1 GB of RAM while loaded. This is also the CPU/WASM fallback model.
+- **fp16:** the full-precision WebGPU model. It uses slightly more RAM and roughly twice the GPU memory for slightly better detection of some structured values.
 
-The choice only applies on the GPU path; the CPU/WASM fallback always uses a compact model. Switching the precision reloads Local AI immediately so the change takes effect right away.
+The fp16 choice only applies on the GPU path; the CPU/WASM fallback uses q4f16. Switching the precision reloads Local AI immediately so the change takes effect right away.
 
 ## Loading And Unloading
 

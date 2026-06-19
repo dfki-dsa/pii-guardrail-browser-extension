@@ -7,13 +7,12 @@ import {
 } from '../../src/shared/constants';
 
 describe('merged model + precision picker choices', () => {
-  test('lists a model once per curated WebGPU dtype with the quantization in brackets', () => {
+  test('lists the active q4f16-only model once under its plain label', () => {
     const bardsai = NER_MODELS.find((model) => model.key === 'bardsai')!;
     const choices = nerModelChoices([bardsai]);
 
     expect(choices).toEqual([
-      { value: 'bardsai@q4f16', key: 'bardsai', dtype: 'q4f16', label: `${bardsai.label} (q4f16)` },
-      { value: 'bardsai@fp16', key: 'bardsai', dtype: 'fp16', label: `${bardsai.label} (fp16)` },
+      { value: 'bardsai', key: 'bardsai', dtype: null, label: bardsai.label },
     ]);
   });
 
@@ -33,9 +32,8 @@ describe('merged model + precision picker choices', () => {
   });
 
   test('derives the select value from persisted model and dtype settings', () => {
-    expect(nerModelChoiceValue('bardsai', 'fp16')).toBe('bardsai@fp16');
-    // No persisted preference falls back to the low-memory default.
-    expect(nerModelChoiceValue('bardsai', undefined)).toBe('bardsai@q4f16');
+    expect(nerModelChoiceValue('bardsai', 'q4f16')).toBe('bardsai');
+    expect(nerModelChoiceValue('bardsai', undefined)).toBe('bardsai');
   });
 
   test('round-trips every choice value back to a settings patch', () => {

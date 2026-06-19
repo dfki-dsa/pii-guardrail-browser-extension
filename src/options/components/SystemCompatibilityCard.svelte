@@ -86,13 +86,6 @@
 		nerModelChoiceValue($settings?.nerModel ?? 'bardsai', $settings?.nerWebGpuDtype),
 	);
 
-	let webGpuDtypeHint = $derived.by(() => {
-		const choice = $settings?.nerWebGpuDtype ?? 'q4f16';
-		return choice === 'fp16'
-			? 'fp16: full-precision model — slightly more RAM and about twice the GPU memory of the 4-bit (q4f16) model.'
-			: 'q4f16: 4-bit model — about 1 GB of RAM while loaded.';
-	});
-
 	function timeoutLabel(value: LocalAiUnloadTimeoutMs): string {
 		if (value === null) return 'Browser session';
 		return `${Math.round(value / 60000)} min`;
@@ -143,9 +136,7 @@
 				{/each}
 			</select>
 			<p class="hint">
-				{webGpuDtypeHint}
-				The quantization only applies when the model runs on the GPU (WebGPU); the CPU
-				fallback always uses the compact model.
+				q4f16: compact 4-bit model used for WebGPU and CPU fallback.
 			</p>
 			{#if $warmupState === 'loading'}
 				<p class="hint">Loading Local AI detection…</p>
