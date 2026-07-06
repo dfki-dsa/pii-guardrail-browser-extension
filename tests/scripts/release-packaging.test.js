@@ -8,6 +8,7 @@ const {
   createReleasePackage,
   isForbiddenPackageEntry,
   listPackageEntries,
+  REQUIRED_PACKAGE_FILES,
   sha256File,
 } = require('../../scripts/package-release');
 const {
@@ -43,6 +44,10 @@ function writePreparedAssets(root) {
 
 function writeDist(root) {
   writeFile(path.join(root, 'dist', 'manifest.json'), '{"manifest_version":3}\n');
+  for (const fileName of REQUIRED_PACKAGE_FILES) {
+    writeFile(path.join(root, 'dist', fileName), `${fileName}\n`);
+  }
+  writeFile(path.join(root, 'dist', 'legal', 'logo-privacy-guardrail-black.png'), 'png');
   writeFile(path.join(root, 'dist', 'background', 'service-worker.js'), 'worker');
   writeFile(path.join(root, 'dist', 'background', 'service-worker.js.map'), 'source map');
   writeFile(path.join(root, 'dist', 'models', 'ner', 'bardsai-eu-pii-anonimization-multilang', 'config.json'), '{}\n');
@@ -92,8 +97,14 @@ describe('official release packaging', () => {
 
     expect(entryNames).toEqual([
       'background/service-worker.js',
+      'legal/logo-privacy-guardrail-black.png',
+      'LICENSE',
       'manifest.json',
       'models/ner/bardsai-eu-pii-anonimization-multilang/config.json',
+      'NOTICE',
+      'TERMS.html',
+      'TERMS.md',
+      'THIRD_PARTY_NOTICES.md',
       'vendor/onnxruntime-web/ort-wasm-simd-threaded.wasm',
     ]);
     expect(excluded).toEqual([
@@ -102,6 +113,14 @@ describe('official release packaging', () => {
       'docs/issues/private.md',
       'node_modules/left-pad/index.js',
     ]);
+  });
+
+  test('fails package listing when required legal files are missing from dist', () => {
+    fs.rmSync(path.join(tempRoot, 'dist', 'TERMS.md'));
+
+    expect(() => listPackageEntries(path.join(tempRoot, 'dist'))).toThrow(
+      /required legal files: TERMS\.md/
+    );
   });
 
   test('dry run validates package contents without requiring a clean Git worktree', () => {
@@ -136,7 +155,13 @@ describe('official release packaging', () => {
     const zip = new AdmZip(result.zipPath);
     const zipEntries = zip.getEntries().map((entry) => entry.entryName).sort();
     expect(zipEntries).toEqual([
+      'LICENSE',
+      'NOTICE',
+      'TERMS.html',
+      'TERMS.md',
+      'THIRD_PARTY_NOTICES.md',
       'background/service-worker.js',
+      'legal/logo-privacy-guardrail-black.png',
       'manifest.json',
       'models/ner/bardsai-eu-pii-anonimization-multilang/config.json',
       'vendor/onnxruntime-web/ort-wasm-simd-threaded.wasm',

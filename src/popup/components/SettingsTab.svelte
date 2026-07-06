@@ -25,6 +25,7 @@
 		openSecurityReport,
 		openPrivacySupport,
 		openPrivacyPolicy,
+		openTermsOfUse,
 		openImpressum,
 		clearFeedback,
 		clearMappings,
@@ -47,6 +48,7 @@
 		openSecurityReport: () => void;
 		openPrivacySupport: () => void;
 		openPrivacyPolicy: () => void;
+		openTermsOfUse: () => void;
 		openImpressum: () => void;
 		clearFeedback: () => Promise<void>;
 		clearMappings: () => Promise<void>;
@@ -103,7 +105,7 @@
 		<button type="button" class="link-row" onclick={openPrivacySupport}><span class="row-label">Support</span><span class="right">›</span></button>
 	</article>
 
-	<LegalCard {openPrivacyPolicy} {openImpressum} />
+	<LegalCard {openPrivacyPolicy} {openTermsOfUse} {openImpressum} />
 	<div class="version-note">Privacy Guardrail · {$nerModel}</div>
 </div>
 

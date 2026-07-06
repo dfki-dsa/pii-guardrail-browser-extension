@@ -31,7 +31,7 @@ import { applyAllowlistToText } from '../shared/feedback';
 import { loadIdentityVault } from '../shared/identity-vault';
 import { shouldAutoWarmLocalAi } from '../shared/local-ai-warmup-gate';
 import { deriveResourceSummary, type ResourceSummary } from '../shared/popup-resource-summary';
-import { PUBLIC_PROJECT_LINKS } from '../shared/project-links';
+import { packagedTermsUrl, PUBLIC_PROJECT_LINKS } from '../shared/project-links';
 import { minResolvedThreshold, resolveThreshold } from '../shared/sensitivity-resolver';
 import { SYSTEM_CHECK_STORAGE_KEY } from '../shared/system-check-storage';
 import { clearEntityMaps, clearFeedback as clearFeedbackLog, getFeedbackLog, loadSettings, saveSettings } from '../shared/storage';
@@ -102,6 +102,7 @@ export type SettingsModel = {
   openSecurityReport: () => void;
   openPrivacySupport: () => void;
   openPrivacyPolicy: () => void;
+  openTermsOfUse: () => void;
   openImpressum: () => void;
   setMinConfidence: (value: number) => Promise<void>;
   setDebug: (enabled: boolean) => Promise<void>;
@@ -445,6 +446,7 @@ export function createAppModels(): AppModels {
       openSecurityReport: () => openExternalUrl(PUBLIC_PROJECT_LINKS.security),
       openPrivacySupport: () => openExternalUrl(PUBLIC_PROJECT_LINKS.support),
       openPrivacyPolicy: () => openExternalUrl(PUBLIC_PROJECT_LINKS.privacy),
+      openTermsOfUse: () => openExternalUrl(packagedTermsUrl()),
       openImpressum: () => openExternalUrl(PUBLIC_PROJECT_LINKS.impressum),
       setMinConfidence: (value) => saveAndBroadcast({ minConfidence: value }),
       setDebug: async (value) => { await saveSettings({ debug: value }); debug.set(value); },

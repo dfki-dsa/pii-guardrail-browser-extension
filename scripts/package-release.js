@@ -13,7 +13,7 @@ const {
 } = require('./extension-packaging');
 const { checkVersion } = require('./version');
 
-const DEFAULT_VERSION = '0.2.0';
+const DEFAULT_VERSION = null;
 const RELEASE_DIR = 'release';
 
 const FORBIDDEN_PACKAGE_PREFIXES = [
@@ -39,12 +39,25 @@ const FORBIDDEN_PACKAGE_FILES = new Set([
   '.DS_Store',
 ]);
 
+const REQUIRED_PACKAGE_FILES = [
+  'LICENSE',
+  'NOTICE',
+  'TERMS.html',
+  'TERMS.md',
+  'THIRD_PARTY_NOTICES.md',
+];
+
 function toPosixPath(value) {
   return value.split(path.sep).join('/');
 }
 
 function npmCommand() {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
+function readPackageVersion(rootDir) {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+  return packageJson.version;
 }
 
 function runStep(label, command, args, options = {}) {
@@ -148,6 +161,12 @@ function listPackageEntries(distDir) {
     throw new Error('Package contents must include dist/manifest.json.');
   }
 
+  const entryNames = new Set(entries.map((entry) => entry.relativePath));
+  const missingRequiredFiles = REQUIRED_PACKAGE_FILES.filter((fileName) => !entryNames.has(fileName));
+  if (missingRequiredFiles.length > 0) {
+    throw new Error(`Package contents must include required legal files: ${missingRequiredFiles.join(', ')}.`);
+  }
+
   return { entries, excluded };
 }
 
@@ -168,7 +187,7 @@ function sha256File(filePath) {
 
 function createReleasePackage(options = {}) {
   const rootDir = options.rootDir || process.cwd();
-  const version = options.version || DEFAULT_VERSION;
+  const version = options.version || readPackageVersion(rootDir);
   const distDir = options.distDir || path.join(rootDir, 'dist');
   const releaseDir = options.releaseDir || path.join(rootDir, RELEASE_DIR);
   const dryRun = Boolean(options.dryRun);
@@ -277,11 +296,13 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_VERSION,
   FORBIDDEN_PACKAGE_PREFIXES,
+  REQUIRED_PACKAGE_FILES,
   assertCleanGitWorktree,
   assertPreparedReleaseAssets,
   createReleasePackage,
   isForbiddenPackageEntry,
   listPackageEntries,
   parseArgs,
+  readPackageVersion,
   sha256File,
 };

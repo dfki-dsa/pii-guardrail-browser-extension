@@ -7,6 +7,31 @@ const {
   LocalNerAssetsPlugin,
   getNerAssetCopyPatterns,
 } = require('./scripts/extension-packaging');
+const { renderTermsHtml } = require('./scripts/terms-html');
+
+class TermsHtmlPlugin {
+  constructor(options = {}) {
+    this.rootDir = options.rootDir || __dirname;
+  }
+
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap('TermsHtmlPlugin', (compilation) => {
+      compilation.hooks.processAssets.tap(
+        {
+          name: 'TermsHtmlPlugin',
+          stage: compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONS,
+        },
+        () => {
+          const sourcePath = path.join(this.rootDir, 'TERMS.md');
+          const markdown = compiler.inputFileSystem.readFileSync(sourcePath, 'utf8');
+          const html = renderTermsHtml(markdown);
+          compilation.emitAsset('TERMS.html', new compiler.webpack.sources.RawSource(html));
+          compilation.fileDependencies.add(sourcePath);
+        }
+      );
+    });
+  }
+}
 
 module.exports = (_env = {}) => {
   const requirePreparedModel =
@@ -85,10 +110,17 @@ module.exports = (_env = {}) => {
         requirePreparedModel,
       }),
 
+      new TermsHtmlPlugin({ rootDir: __dirname }),
+
       // Copy static files to dist/
       new CopyPlugin({
         patterns: [
           { from: 'manifest.json', to: '.' },
+          { from: 'LICENSE', to: '.' },
+          { from: 'NOTICE', to: '.' },
+          { from: 'TERMS.md', to: '.' },
+          { from: 'THIRD_PARTY_NOTICES.md', to: '.' },
+          { from: 'docs/assets/logo-privacy-guardrail-black.png', to: 'legal/logo-privacy-guardrail-black.png' },
           { from: 'src/assets', to: 'assets', globOptions: { ignore: ['**/.DS_Store'] } },
           { from: 'src/assets/fonts', to: 'fonts' },
           { from: 'src/ui/banner/de-anon-banner.css', to: 'ui/banner/' },

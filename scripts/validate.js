@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 const childProcess = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-const DEFAULT_VERSION = '0.2.0';
+const DEFAULT_VERSION = null;
 
 function npmCommand() {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -30,6 +32,11 @@ function runNpm(label, args, options) {
   runStep(label, npmCommand(), args, options);
 }
 
+function readPackageVersion(rootDir = process.cwd()) {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+  return packageJson.version;
+}
+
 function parseArgs(argv) {
   const [command, ...rest] = argv;
   const options = {
@@ -55,7 +62,7 @@ function parseArgs(argv) {
 }
 
 function runCiValidation(options = {}) {
-  const version = options.version || DEFAULT_VERSION;
+  const version = options.version || readPackageVersion();
   runNpm('WASM build', ['run', 'build:wasm']);
   runNpm('Unit tests', ['test']);
   runNpm('Svelte and TypeScript component checks', ['run', 'check:svelte']);
@@ -67,7 +74,7 @@ function runCiValidation(options = {}) {
 }
 
 function runReleaseStrictValidation(options = {}) {
-  const version = options.version || DEFAULT_VERSION;
+  const version = options.version || readPackageVersion();
   runNpm('Version alignment', ['run', 'version:check', '--', version]);
   runNpm('Chrome permission audit', ['run', 'check:permissions']);
   runNpm('Privacy boundary check', ['run', 'check:privacy-boundary']);
@@ -108,6 +115,7 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_VERSION,
   parseArgs,
+  readPackageVersion,
   runCiValidation,
   runReleaseStrictValidation,
 };

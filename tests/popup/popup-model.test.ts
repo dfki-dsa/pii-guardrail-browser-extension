@@ -99,19 +99,25 @@ function okStatus(overrides: Partial<SystemCompatibilityStatus> = {}): SystemCom
 }
 
 describe('createAppModels — resource-safe popup', () => {
-  test('opens public support links in new tabs', async () => {
+  test('opens public support and legal links in new tabs', async () => {
     await setupHarness({ systemStatus: okStatus() });
     const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
-    const { PUBLIC_PROJECT_LINKS } = jest.requireActual<typeof import('../../src/shared/project-links')>('../../src/shared/project-links');
+    const { packagedTermsUrl, PUBLIC_PROJECT_LINKS } = jest.requireActual<typeof import('../../src/shared/project-links')>('../../src/shared/project-links');
     const app = createAppModels();
 
     app.settings.openIssueReport();
     app.settings.openSecurityReport();
     app.settings.openPrivacySupport();
+    app.settings.openPrivacyPolicy();
+    app.settings.openTermsOfUse();
+    app.settings.openImpressum();
 
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: PUBLIC_PROJECT_LINKS.newIssue });
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: PUBLIC_PROJECT_LINKS.security });
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: PUBLIC_PROJECT_LINKS.support });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: PUBLIC_PROJECT_LINKS.privacy });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: packagedTermsUrl() });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: PUBLIC_PROJECT_LINKS.impressum });
   });
 
   test('OK tier with Local AI on auto-warms the model', async () => {

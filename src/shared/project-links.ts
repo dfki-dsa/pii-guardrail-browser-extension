@@ -11,12 +11,16 @@ export const PUBLIC_PROJECT_LINKS = {
   terms: `${PUBLIC_PROJECT_REPO_URL}/blob/main/TERMS.md`,
 } as const;
 
-/**
- * Terms of Use are not yet published (see issue 08). Until `TERMS.md` lands in
- * the public repo, the UI surfaces the Terms entry as a "coming soon"
- * placeholder rather than a working link. Flip to `true` once TERMS.md is live.
- */
-export const TERMS_PUBLISHED = false;
+export const PACKAGED_TERMS_PATH = 'TERMS.html';
+export const TERMS_PUBLISHED = true;
+
+export function packagedTermsUrl(): string {
+  if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    return chrome.runtime.getURL(PACKAGED_TERMS_PATH);
+  }
+
+  return PUBLIC_PROJECT_LINKS.terms;
+}
 
 export const SECURITY_SUPPORT_EMAIL = 'pii@dfki.de';
 
@@ -35,4 +39,3 @@ export const LIMITS_DISCLAIMER =
  */
 export const AI_TRANSPARENCY_NOTICE =
   'Detection uses a local AI model that runs on your device. It can miss or mis-flag sensitive content, so review text before you send it.';
-

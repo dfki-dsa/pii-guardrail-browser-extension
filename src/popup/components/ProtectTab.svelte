@@ -11,12 +11,14 @@
 		categories,
 		vault,
 		openPrivacyPolicy,
+		openTermsOfUse,
 		openImpressum
 	}: {
 		protection: ProtectionModel;
 		categories: CategoriesModel;
 		vault: VaultModel;
 		openPrivacyPolicy: () => void;
+		openTermsOfUse: () => void;
 		openImpressum: () => void;
 	} = $props();
 </script>
@@ -43,7 +45,7 @@
 		openVaultOptions={vault.openVaultOptions}
 	/>
 	<MaintenanceCard restoreDefaults={categories.restoreDefaults} clearMappings={vault.clearMappings} />
-	<LegalCard {openPrivacyPolicy} {openImpressum} />
+	<LegalCard {openPrivacyPolicy} {openTermsOfUse} {openImpressum} />
 </div>
 
 <style>

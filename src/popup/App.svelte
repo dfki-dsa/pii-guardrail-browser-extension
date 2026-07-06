@@ -60,6 +60,7 @@
           {categories}
           {vault}
           openPrivacyPolicy={settings.openPrivacyPolicy}
+          openTermsOfUse={settings.openTermsOfUse}
           openImpressum={settings.openImpressum}
         />
       {:else if $activeTab === "detect"}
@@ -94,6 +95,7 @@
           openSecurityReport={settings.openSecurityReport}
           openPrivacySupport={settings.openPrivacySupport}
           openPrivacyPolicy={settings.openPrivacyPolicy}
+          openTermsOfUse={settings.openTermsOfUse}
           openImpressum={settings.openImpressum}
           clearFeedback={test.clearFeedback}
           clearMappings={vault.clearMappings}

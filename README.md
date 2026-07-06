@@ -16,7 +16,7 @@ Privacy Guardrail is a Manifest V3 Chrome extension that detects personally iden
 
 Developed at the [German Research Center for Artificial Intelligence (DFKI)](https://www.dfki.de/), Data Science and its Applications research department.
 
-> **Status — public beta (`0.3.0`).** Detection is assistive: it helps you catch personal data before it leaves your machine, but it will not catch everything and is not a compliance or DLP product. See [Known limitations](#known-limitations).
+> **Status — public beta (`0.x`).** Detection is assistive: it helps you catch personal data before it leaves your machine, but it will not catch everything and is not a compliance or DLP product. See [Known limitations](#known-limitations).
 
 ## Contents
 
@@ -80,6 +80,7 @@ No pasted text is sent to a remote inference service. There is no telemetry or a
 
 - [User guide](docs/user/) — install, day-to-day use, Local AI explained, managing local data, troubleshooting, reporting issues safely, detected categories and limitations.
 - [Privacy posture](PRIVACY.md)
+- [Terms of Use](TERMS.md)
 - [Security reporting](SECURITY.md)
 - [Support](SUPPORT.md)
 - [Changelog](CHANGELOG.md)

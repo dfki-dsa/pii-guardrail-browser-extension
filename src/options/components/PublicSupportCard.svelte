@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { PUBLIC_PROJECT_LINKS, SECURITY_SUPPORT_EMAIL, TERMS_PUBLISHED } from '../../shared/project-links';
+	import { packagedTermsUrl, PUBLIC_PROJECT_LINKS, SECURITY_SUPPORT_EMAIL, TERMS_PUBLISHED } from '../../shared/project-links';
 	import CardHeading from '../../popup/components/CardHeading.svelte';
+
+	const termsUrl = packagedTermsUrl();
 </script>
 
 <article class="card" id="support-section">
@@ -15,7 +17,7 @@
 		<a href={PUBLIC_PROJECT_LINKS.privacy} target="_blank" rel="noopener noreferrer">Privacy Policy</a>
 		<a href={PUBLIC_PROJECT_LINKS.impressum} target="_blank" rel="noopener noreferrer">Impressum</a>
 		{#if TERMS_PUBLISHED}
-			<a href={PUBLIC_PROJECT_LINKS.terms} target="_blank" rel="noopener noreferrer">Terms of Use</a>
+			<a href={termsUrl} target="_blank" rel="noopener noreferrer">Terms of Use</a>
 		{:else}
 			<span class="link-pending" aria-disabled="true" title="Terms of Use will be published soon.">Terms of Use (soon)</span>
 		{/if}
