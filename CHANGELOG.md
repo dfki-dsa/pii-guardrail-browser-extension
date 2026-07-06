@@ -4,6 +4,11 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
+## [0.3.2] - Public Beta
+
+- Added terms of use, release legal notices, and packaged legal documents for GitHub release artifacts
+- Surfaced legal and support links in the popup and options UI
+
 ## [0.3.1] - Public Beta
 
 - Reused the stored system compatibility check for WebGPU detection, avoiding an extra adapter probe that could fail while Local AI loads
