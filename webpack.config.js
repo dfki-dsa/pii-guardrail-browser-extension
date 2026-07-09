@@ -38,6 +38,23 @@ module.exports = (_env = {}) => {
     module: {
       rules: [
         {
+          // Transformers.js / ONNX Runtime Web / wasm-bindgen reference their
+          // .wasm (and pthread worker) files via `new URL(..., import.meta.url)`.
+          // Webpack would emit each referenced file as a hashed asset at the
+          // dist root (~56 MB of duplicates). The runtime never uses those:
+          // ner-provider.ts pins ORT to vendor/onnxruntime-web/* via wasmPaths,
+          // and wasm-bridge.ts passes an explicit chrome.runtime.getURL for the
+          // crate wasm. Disable URL parsing for these packages so the copies in
+          // vendor/ and wasm/ (staged by CopyPlugin) stay the single source.
+          test: /\.m?js$/,
+          include: [
+            path.resolve(__dirname, 'node_modules/@huggingface/transformers'),
+            path.resolve(__dirname, 'node_modules/onnxruntime-web'),
+            path.resolve(__dirname, 'crate/pkg'),
+          ],
+          parser: { url: false },
+        },
+        {
           test: /\.svelte$/,
           use: {
             loader: 'svelte-loader',
