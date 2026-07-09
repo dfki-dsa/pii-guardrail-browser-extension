@@ -283,14 +283,19 @@ quant_config = matmul_nbits_quantizer.DefaultWeightOnlyQuantConfig(
     op_types_to_quantize=("MatMul",),
     bits=${DEFAULT_BITS},
 )
-quant = matmul_nbits_quantizer.MatMulNBitsQuantizer(
+quant_kwargs = dict(
     model=model,
-    bits=${DEFAULT_BITS},
     block_size=${JSON.stringify(options.blockSize)},
     is_symmetric=${options.symmetric ? 'True' : 'False'},
     accuracy_level=${accuracyLevelLiteral},
     algo_config=quant_config,
 )
+# onnxruntime >= 1.22 moved the bits argument into the algo config; older
+# versions require it on the quantizer itself. Support both.
+import inspect
+if "bits" in inspect.signature(matmul_nbits_quantizer.MatMulNBitsQuantizer.__init__).parameters:
+    quant_kwargs["bits"] = ${DEFAULT_BITS}
+quant = matmul_nbits_quantizer.MatMulNBitsQuantizer(**quant_kwargs)
 quant.process()
 quant.model.save_model_to_file(${outputLiteral}, True)
 `.trim();
