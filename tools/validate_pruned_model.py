@@ -42,6 +42,12 @@ def main():
     p.add_argument("--baseline-dir", required=True)
     p.add_argument("--pruned-dir", required=True)
     p.add_argument("--pruned-onnx", default=None)
+    p.add_argument(
+        "--min-agreement",
+        type=float,
+        default=1.0,
+        help="Fail when per-sample argmax agreement drops below this (default 1.0: any label change fails).",
+    )
     a = p.parse_args()
 
     tok_b, sess_b = load(a.baseline_dir)
@@ -54,9 +60,9 @@ def main():
         t_b, l_b = logits(tok_b, sess_b, text)
         t_p, l_p = logits(tok_p, sess_p, text)
         if t_b != t_p:
-            print("TOKENIZATION MISMATCH:", text)
-            print("  base:", t_b)
-            print("  prun:", t_p)
+            print("FAIL: tokenization mismatch:", text, file=sys.stderr)
+            print("  base:", t_b, file=sys.stderr)
+            print("  prun:", t_p, file=sys.stderr)
             fail = True
             continue
         diff = float(np.max(np.abs(l_b - l_p)))
@@ -76,7 +82,15 @@ def main():
             for j, (x, y) in enumerate(zip(ents_b, ents_p)):
                 if x != y:
                     print("   token %d %r: %s -> %s (score %.3f -> %.3f)" % (j, t_b[j], x, y, s_b[j], s_p[j]))
+        if agree < a.min_agreement:
+            print(
+                "FAIL: argmax agreement %.3f below threshold %.3f: %s" % (agree, a.min_agreement, text),
+                file=sys.stderr,
+            )
+            fail = True
     print("worst max|dlogit|:", worst)
+    if fail:
+        print("FAIL: model predictions diverged from baseline", file=sys.stderr)
     return 1 if fail else 0
 
 if __name__ == "__main__":
