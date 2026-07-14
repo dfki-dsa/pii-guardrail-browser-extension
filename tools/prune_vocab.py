@@ -180,7 +180,7 @@ def main():
 
     onnx.save(model, out_onnx)
 
-    for name in ("tokenizer_config.json",):
+    for name in ("tokenizer_config.json", "special_tokens_map.json"):
         src_path = os.path.join(src, name)
         if os.path.exists(src_path):
             with open(src_path, "rb") as fin, open(os.path.join(out, name), "wb") as fout:
