@@ -97,6 +97,13 @@ The extension supports use alongside third-party AI chat services, currently:
 - ChatGPT (`chatgpt.com`, `chat.openai.com`)
 - Claude (`claude.ai`)
 - Gemini (`gemini.google.com`)
+- Microsoft Copilot (`copilot.com`, `copilot.microsoft.com`, `bing.com/chat`)
+- DeepL (`deepl.com`)
+- LanguageTool (`languagetool.org`)
+- Poe (`poe.com`)
+- Mistral (`chat.mistral.ai`)
+- Perplexity AI (`perplexity.ai`)
+- HuggingChat (`huggingface.co/chat`)
 
 Transmission of text to one of these providers happens **only when you yourself send** the
 reviewed text in that service's chat interface. At that point the text leaves your browser and

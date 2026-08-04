@@ -48,6 +48,8 @@ Supported sites (Chrome desktop stable)
 - chat.openai.com
 - claude.ai
 - gemini.google.com
+- copilot.com
+- copilot.microsoft.com
 
 Generic or custom websites are not supported.
 
@@ -112,7 +114,7 @@ Used for visible extension workflows: opening Privacy/Support/Security and Optio
 ### Host permission justification (one combined entry)
 
 ```
-The extension only acts on four supported chat sites: chatgpt.com, chat.openai.com, claude.ai, and gemini.google.com. Host access is required to inject the paste-interception content script, the local review banner, and to expose packaged WebAssembly/ONNX runtime and model assets to those pages so detection can run locally. No other websites are matched, and no broad <all_urls> access is requested.
+The extension only acts on supported chat sites: chatgpt.com, chat.openai.com, claude.ai, gemini.google.com, copilot.com, and copilot.microsoft.com. Host access is required to inject the paste-interception content script, the local review banner, and to expose packaged WebAssembly/ONNX runtime and model assets to those pages so detection can run locally. No other websites are matched, and no broad <all_urls> access is requested.
 ```
 
 ### Remote code use

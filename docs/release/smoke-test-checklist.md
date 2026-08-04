@@ -33,6 +33,7 @@ Run the steps below on:
 - `chat.openai.com`
 - `claude.ai`
 - `gemini.google.com`
+- `copilot.com` and `copilot.microsoft.com`
 
 ## Steps For Each Site
 

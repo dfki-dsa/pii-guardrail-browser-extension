@@ -47,7 +47,7 @@ Diese Nutzungsbedingungen treten neben die Apache License, Version 2.0 (nachfolg
 
 ## § 3 Unterstützte Anwendungen und Systemvoraussetzungen
 
-(1) Die Software unterstützt in der aktuellen Version die KI-Chat-Anwendungen ChatGPT (chat.openai.com, chatgpt.com), Claude (claude.ai) und Gemini (gemini.google.com); weitere können folgen. Ein Anspruch auf Unterstützung bestimmter Anwendungen, deren Fortbestand oder Kompatibilität mit künftigen Änderungen dieser Dienste besteht nicht.
+(1) Die Software unterstützt in der aktuellen Version die KI-Chat-Anwendungen ChatGPT (chat.openai.com, chatgpt.com), Claude (claude.ai), Gemini (gemini.google.com), Microsoft Copilot (copilot.com, copilot.microsoft.com, bing.com/chat), DeepL, LanguageTool, Poe, Mistral, Perplexity AI und HuggingChat; weitere können folgen. Ein Anspruch auf Unterstützung bestimmter Anwendungen, deren Fortbestand oder Kompatibilität mit künftigen Änderungen dieser Dienste besteht nicht.
 
 (2) Die Software führt ein Transformer-NER-Modell direkt im Browser aus und stellt daher erhöhte Anforderungen. Voraussetzung ist Google Chrome Desktop in der neuesten stabilen Version; andere Chromium-basierte Browser sowie mobile Chrome-Versionen werden in dieser Version nicht unterstützt.
 
@@ -199,7 +199,7 @@ These Terms of Use apply in addition to the Apache License, Version 2.0 (hereina
 
 ### § 3 Supported Applications and System Requirements
 
-(1) In the current version, the Software supports the AI chat applications ChatGPT (chat.openai.com, chatgpt.com), Claude (claude.ai), and Gemini (gemini.google.com); further applications may follow. There is no entitlement to support for specific applications, their continued availability, or compatibility with future changes to these services.
+(1) In the current version, the Software supports the AI chat applications ChatGPT (chat.openai.com, chatgpt.com), Claude (claude.ai), Gemini (gemini.google.com), Microsoft Copilot (copilot.com, copilot.microsoft.com, bing.com/chat), DeepL, LanguageTool, Poe, Mistral, Perplexity AI, and HuggingChat; further applications may follow. There is no entitlement to support for specific applications, their continued availability, or compatibility with future changes to these services.
 
 (2) The Software runs a transformer NER model directly in the browser and therefore has increased requirements. Google Chrome Desktop in the latest stable version is required; other Chromium-based browsers and mobile Chrome versions are not supported in this version.
 

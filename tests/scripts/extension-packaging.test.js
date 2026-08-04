@@ -153,7 +153,16 @@ describe('extension NER asset packaging', () => {
       'https://chat.openai.com/*',
       'https://chatgpt.com/*',
       'https://claude.ai/*',
+      'https://copilot.com/*',
+      'https://copilot.microsoft.com/*',
+      'https://www.bing.com/chat*',
       'https://gemini.google.com/*',
+      'https://www.deepl.com/*',
+      'https://languagetool.org/*',
+      'https://poe.com/*',
+      'https://chat.mistral.ai/*',
+      'https://www.perplexity.ai/*',
+      'https://huggingface.co/chat*',
     ];
 
     expect(manifest.web_accessible_resources).toEqual(
@@ -173,7 +182,16 @@ describe('extension NER asset packaging', () => {
       'https://chat.openai.com/*',
       'https://chatgpt.com/*',
       'https://claude.ai/*',
+      'https://copilot.com/*',
+      'https://copilot.microsoft.com/*',
+      'https://www.bing.com/chat*',
       'https://gemini.google.com/*',
+      'https://www.deepl.com/*',
+      'https://languagetool.org/*',
+      'https://poe.com/*',
+      'https://chat.mistral.ai/*',
+      'https://www.perplexity.ai/*',
+      'https://huggingface.co/chat*',
     ];
     const isolatedScript = manifest.content_scripts.find((entry) =>
       entry.js.includes('content/content-script.js')

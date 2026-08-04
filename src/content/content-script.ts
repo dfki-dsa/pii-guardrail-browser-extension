@@ -8,9 +8,17 @@
  */
 
 import type { SiteAdapter } from './site-adapters/adapter-interface';
+import './patch-trusted-types';
 import { ChatGptAdapter } from './site-adapters/chatgpt-adapter';
 import { ClaudeAdapter } from './site-adapters/claude-adapter';
 import { GeminiAdapter } from './site-adapters/gemini-adapter';
+import { CopilotAdapter } from './site-adapters/copilot-adapter';
+import { MistralAdapter } from './site-adapters/mistral-adapter';
+import { PoeAdapter } from './site-adapters/poe-adapter';
+import { PerplexityAdapter } from './site-adapters/perplexity-adapter';
+import { LanguageToolAdapter } from './site-adapters/languagetool-adapter';
+import { HuggingChatAdapter } from './site-adapters/huggingchat-adapter';
+import { DeepLAdapter } from './site-adapters/deepl-adapter';
 import { GenericAdapter } from './site-adapters/generic-adapter';
 import { PasteInterceptor } from './paste-interceptor';
 import { sendRuntimeMessageBestEffort } from './runtime-messaging';
@@ -73,6 +81,34 @@ function selectAdapter(): SiteAdapter {
   }
   if (host.includes('gemini.google.com')) {
     return new GeminiAdapter();
+  }
+  if (
+    host.includes('copilot.com') ||
+    host.includes('copilot.microsoft.com') ||
+    host.includes('cloud.microsoft') ||
+    host.includes('microsoft365.com') ||
+    host.includes('bing.com') ||
+    host.includes('copilot.fun')
+  ) {
+    return new CopilotAdapter();
+  }
+  if (host.includes('deepl.com')) {
+    return new DeepLAdapter();
+  }
+  if (host.includes('languagetool.org')) {
+    return new LanguageToolAdapter();
+  }
+  if (host.includes('poe.com')) {
+    return new PoeAdapter();
+  }
+  if (host.includes('chat.mistral.ai')) {
+    return new MistralAdapter();
+  }
+  if (host.includes('perplexity.ai')) {
+    return new PerplexityAdapter();
+  }
+  if (host.includes('huggingface.co')) {
+    return new HuggingChatAdapter();
   }
   return new GenericAdapter();
 }
@@ -554,92 +590,90 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse): undefine
 // --- Initialize ---
 
 async function init(): Promise<void> {
-  // Load settings and adaptive thresholds
-  settings = await loadSettings();
+  try {
+    // Load settings and adaptive thresholds
+    settings = await loadSettings();
 
-  if (!settings.enabled) {
-    if (settings.debug) {
-      console.log('[PG:content] Extension disabled, not activating');
+    if (!settings.enabled) {
+      if (settings.debug) {
+        console.log('[PG:content] Extension disabled, not activating');
+      }
+      return;
     }
-    return;
-  }
 
-  await maybeShowCriticalLocalAiModal();
+    await maybeShowCriticalLocalAiModal();
 
-  pageStatusChip = new PageStatusChip(settings.theme);
-  await refreshSystemStatusFromBackground();
+    pageStatusChip = new PageStatusChip(settings.theme);
+    await refreshSystemStatusFromBackground();
 
-  adaptiveThresholds = await computeAdaptiveThresholds(settings.minConfidence);
+    adaptiveThresholds = await computeAdaptiveThresholds(settings.minConfidence);
 
-  // Restore entity map for this conversation
-  const stored = await loadEntityMap(conversationUrl);
-  entityMap = new EntityMap(stored);
+    // Restore entity map for this conversation
+    const stored = await loadEntityMap(conversationUrl);
+    entityMap = new EntityMap(stored);
 
-  // Restore identity vault (cross-session, cross-provider)
-  if (settings.identityVaultEnabled) {
-    identityVault = await loadIdentityVault();
-  }
+    // Restore identity vault (cross-session, cross-provider)
+    if (settings.identityVaultEnabled) {
+      identityVault = await loadIdentityVault();
+    }
 
-  // React to vault edits made elsewhere (options page, other tabs).
-  // Without this, a user editing the synthetic value of "John Doe" in the
-  // options page would still see the old value applied to subsequent
-  // pastes in this tab until reload.
-  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName !== 'local') return;
-      if (changes['pg_identity_vault']) {
-        const next = changes['pg_identity_vault'].newValue;
-        if (next && Array.isArray(next.records)) {
-          identityVault = next;
-          if (settings.debug) {
-            console.log('[PG:content] Vault reloaded from storage event');
+    // React to vault edits made elsewhere (options page, other tabs).
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        if (changes['pg_identity_vault']) {
+          const next = changes['pg_identity_vault'].newValue;
+          if (next && Array.isArray(next.records)) {
+            identityVault = next;
+            if (settings.debug) {
+              console.log('[PG:content] Vault reloaded from storage event');
+            }
           }
         }
-      }
-      if (changes['pg_settings']) {
-        const next = changes['pg_settings'].newValue as Settings | undefined;
-        if (next) {
-          settings = next;
-          interceptor.setEnabled(settings.enabled);
-          clipboardInterceptor.setTheme(settings.theme);
-          clipboardInterceptor.setEnabled(
-            settings.enabled && settings.clipboardInterceptEnabled,
-          );
-          pageStatusChip?.setTheme(settings.theme);
-          if (!settings.enabled || settings.nerProvider === 'off') {
-            reportSupportedPageActivity(false, true);
-          } else {
-            reportVisibility();
-          }
-          if (settings.debug) {
-            console.log('[PG:content] Settings reloaded from storage event');
+        if (changes['pg_settings']) {
+          const next = changes['pg_settings'].newValue as Settings | undefined;
+          if (next) {
+            settings = next;
+            interceptor.setEnabled(settings.enabled);
+            clipboardInterceptor.setTheme(settings.theme);
+            clipboardInterceptor.setEnabled(
+              settings.enabled && settings.clipboardInterceptEnabled,
+            );
+            pageStatusChip?.setTheme(settings.theme);
+            if (!settings.enabled || settings.nerProvider === 'off') {
+              reportSupportedPageActivity(false, true);
+            } else {
+              reportVisibility();
+            }
+            if (settings.debug) {
+              console.log('[PG:content] Settings reloaded from storage event');
+            }
           }
         }
-      }
-      if (changes[SYSTEM_CHECK_STORAGE_KEY]) {
-        // System-check storage updates carry the freshest tier, localAiState,
-        // and modal pending/dismissed flags. Re-derive the chip without
-        // sending another message to the background.
-        const next = changes[SYSTEM_CHECK_STORAGE_KEY].newValue as SystemCompatibilityStatus | undefined;
-        lastSystemStatus = next ?? null;
-        refreshPageStatusChip();
-      }
-    });
-  }
+        if (changes[SYSTEM_CHECK_STORAGE_KEY]) {
+          const next = changes[SYSTEM_CHECK_STORAGE_KEY].newValue as SystemCompatibilityStatus | undefined;
+          lastSystemStatus = next ?? null;
+          refreshPageStatusChip();
+        }
+      });
+    }
 
-  // Start interception and observation
-  interceptor.start();
-  startSupportedPageActivityHeartbeat();
-  responseObserver.start();
-  clipboardInterceptor.setTheme(settings.theme);
-  clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);
-  clipboardInterceptor.start();
+    // Start interception and observation
+    interceptor.start();
+    startSupportedPageActivityHeartbeat();
+    responseObserver.start();
+    clipboardInterceptor.setTheme(settings.theme);
+    clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);
+    clipboardInterceptor.start();
 
-  if (settings.debug) {
-    console.log(`[PG:content] Privacy Guardrail active on ${adapter.name} (${window.location.hostname})`);
-    console.log(`[PG:content] Adaptive thresholds:`, adaptiveThresholds);
-    console.log(`[PG:content] Entity map size: ${entityMap.size}`);
-    console.log(`[PG:content] Vault size: ${identityVault.records.length}`);
+    if (settings.debug) {
+      console.log(`[PG:content] Privacy Guardrail active on ${adapter.name} (${window.location.hostname})`);
+      console.log(`[PG:content] Adaptive thresholds:`, adaptiveThresholds);
+      console.log(`[PG:content] Entity map size: ${entityMap.size}`);
+      console.log(`[PG:content] Vault size: ${identityVault.records.length}`);
+    }
+  } catch (err) {
+    console.error('[PG:content] INIT ERROR:', err);
   }
 }
 

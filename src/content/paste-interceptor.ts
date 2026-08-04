@@ -98,12 +98,37 @@ export class PasteInterceptor {
   private handlePaste = (event: ClipboardEvent): void => {
     if (!this.enabled) return;
 
-    const inputElement = this.adapter.getInputElement();
+    const path = event.composedPath();
+
+    // Dynamically locate the editable element target directly from the paste event's composed path
+    let inputElement: HTMLElement | null = null;
+    for (const target of path) {
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName.toUpperCase();
+        const isEditable =
+          tag === 'TEXTAREA' ||
+          tag === 'INPUT' ||
+          target.getAttribute('contenteditable') === 'true' ||
+          target.isContentEditable;
+        if (isEditable) {
+          inputElement = target;
+          break;
+        }
+      }
+    }
+
+    if (!inputElement) {
+      inputElement = this.adapter.getInputElement();
+    }
+
     if (!inputElement) return;
 
-    // Only intercept pastes into the chat input
-    const target = event.target as HTMLElement;
-    if (!inputElement.contains(target) && target !== inputElement) return;
+    console.log(
+      '[PG:content] PASTE EVENT DETECTED! Target:',
+      (event.target as any)?.tagName,
+      'Resolved inputElement:',
+      inputElement.tagName,
+    );
 
     const text = event.clipboardData?.getData('text/plain');
     if (!text || text.length < MIN_PASTE_LENGTH) return;

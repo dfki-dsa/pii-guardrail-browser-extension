@@ -131,6 +131,7 @@ Those local model fixtures are not part of the public initial commit.
    - `chat.openai.com`
    - `claude.ai`
    - `gemini.google.com`
+   - `copilot.com` and `copilot.microsoft.com`
 
 The Chrome Web Store is the primary install path for beta users. Loading unpacked builds is for development and manual release validation.
 

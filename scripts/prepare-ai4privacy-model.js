@@ -6,7 +6,7 @@ const { spawnSync } = require('child_process');
 
 const DEFAULT_MODEL_ID = 'Isotonic/distilbert_finetuned_ai4privacy_v2';
 const DEFAULT_OUTPUT_DIR = path.join('generated', 'models', 'ner', 'ai4privacy');
-const DEFAULT_PYTHON = 'python3';
+const DEFAULT_PYTHON = './.venv/Scripts/python.exe';
 
 const REQUIRED_JSON_FILES = ['config.json', 'tokenizer.json', 'tokenizer_config.json'];
 const OPTIONAL_VOCABULARY_FILES = ['vocab.txt', 'special_tokens_map.json'];

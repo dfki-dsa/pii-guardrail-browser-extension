@@ -85,6 +85,7 @@ Run the manual smoke checklist in `docs/release/smoke-test-checklist.md` against
 - `chat.openai.com`
 - `claude.ai`
 - `gemini.google.com`
+- `copilot.com` and `copilot.microsoft.com`
 
 Before packaging, review `docs/release/chrome-permissions.md` and `docs/release/privacy-boundary.md`. Reuse the permission justifications for the Chrome Web Store listing, and keep the privacy-boundary check green before creating release artifacts.
 

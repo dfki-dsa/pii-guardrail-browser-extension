@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Privacy Guardrail",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Review and replace personal data in text before pasting into LLM chats. Runs locally in your browser. Assistive only.",
   "permissions": [
     "storage",
@@ -12,7 +12,21 @@
     "https://chat.openai.com/*",
     "https://chatgpt.com/*",
     "https://claude.ai/*",
-    "https://gemini.google.com/*"
+    "https://copilot.com/*",
+    "https://*.copilot.com/*",
+    "https://copilot.microsoft.com/*",
+    "https://*.copilot.microsoft.com/*",
+    "https://*.cloud.microsoft/*",
+    "https://*.microsoft365.com/*",
+    "https://*.bing.com/*",
+    "https://*.copilot.fun/*",
+    "https://gemini.google.com/*",
+    "https://www.deepl.com/*",
+    "https://languagetool.org/*",
+    "https://poe.com/*",
+    "https://chat.mistral.ai/*",
+    "https://www.perplexity.ai/*",
+    "https://huggingface.co/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",
@@ -24,20 +38,50 @@
         "https://chat.openai.com/*",
         "https://chatgpt.com/*",
         "https://claude.ai/*",
-        "https://gemini.google.com/*"
+        "https://copilot.com/*",
+        "https://*.copilot.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://*.copilot.microsoft.com/*",
+        "https://*.cloud.microsoft/*",
+        "https://*.microsoft365.com/*",
+        "https://*.bing.com/*",
+        "https://*.copilot.fun/*",
+        "https://gemini.google.com/*",
+        "https://www.deepl.com/*",
+        "https://languagetool.org/*",
+            "https://poe.com/*",
+        "https://chat.mistral.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://huggingface.co/*"
       ],
+      "all_frames": true,
       "js": [
         "content/content-script.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_end"
     },
     {
       "matches": [
         "https://chat.openai.com/*",
         "https://chatgpt.com/*",
         "https://claude.ai/*",
-        "https://gemini.google.com/*"
+        "https://copilot.com/*",
+        "https://*.copilot.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://*.copilot.microsoft.com/*",
+        "https://*.cloud.microsoft/*",
+        "https://*.microsoft365.com/*",
+        "https://*.bing.com/*",
+        "https://*.copilot.fun/*",
+        "https://gemini.google.com/*",
+        "https://www.deepl.com/*",
+        "https://languagetool.org/*",
+            "https://poe.com/*",
+        "https://chat.mistral.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://huggingface.co/*"
       ],
+      "all_frames": true,
       "js": [
         "content/clipboard-interceptor-page.js"
       ],
@@ -68,7 +112,21 @@
         "https://chat.openai.com/*",
         "https://chatgpt.com/*",
         "https://claude.ai/*",
-        "https://gemini.google.com/*"
+        "https://copilot.com/*",
+        "https://*.copilot.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://*.copilot.microsoft.com/*",
+        "https://*.cloud.microsoft/*",
+        "https://*.microsoft365.com/*",
+        "https://*.bing.com/*",
+        "https://*.copilot.fun/*",
+        "https://gemini.google.com/*",
+        "https://www.deepl.com/*",
+        "https://languagetool.org/*",
+        "https://poe.com/*",
+        "https://chat.mistral.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://huggingface.co/*"
       ]
     }
   ],

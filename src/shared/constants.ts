@@ -6,7 +6,16 @@ export const DEFAULT_CURATED_URLS = [
   'https://chat.openai.com',
   'https://chatgpt.com',
   'https://claude.ai',
+  'https://copilot.com',
+  'https://copilot.microsoft.com',
+  'https://www.bing.com',
   'https://gemini.google.com',
+  'https://www.deepl.com',
+  'https://languagetool.org',
+  'https://poe.com',
+  'https://chat.mistral.ai',
+  'https://www.perplexity.ai',
+  'https://huggingface.co',
 ];
 
 /** Minimum text length to trigger PII analysis on paste. */

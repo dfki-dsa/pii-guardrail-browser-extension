@@ -5,7 +5,21 @@ const SUPPORTED_HOST_PERMISSIONS = [
   'https://chat.openai.com/*',
   'https://chatgpt.com/*',
   'https://claude.ai/*',
+  'https://copilot.com/*',
+  'https://*.copilot.com/*',
+  'https://copilot.microsoft.com/*',
+  'https://*.copilot.microsoft.com/*',
+  'https://*.cloud.microsoft/*',
+  'https://*.microsoft365.com/*',
+  'https://*.bing.com/*',
+  'https://*.copilot.fun/*',
   'https://gemini.google.com/*',
+  'https://www.deepl.com/*',
+  'https://languagetool.org/*',
+  'https://poe.com/*',
+  'https://chat.mistral.ai/*',
+  'https://www.perplexity.ai/*',
+  'https://huggingface.co/*',
 ];
 
 const REQUIRED_PERMISSIONS = ['storage', 'offscreen', 'tabs'];

@@ -6,6 +6,7 @@ Privacy Guardrail public beta support is scoped to Chrome desktop stable and:
 - `chat.openai.com`
 - `claude.ai`
 - `gemini.google.com`
+- `copilot.com` and `copilot.microsoft.com`
 
 ## Extension Looks Inactive
 

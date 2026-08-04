@@ -39,7 +39,7 @@ All screenshots use real supported sites with synthetic prompts only. The redact
 For each captured frame, record before saving:
 
 - Frame ID and title from the table above.
-- Site (`chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`) or extension surface (popup, options).
+- Site (`chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`, `copilot.microsoft.com`) or extension surface (popup, options).
 - Prompt ID from `synthetic-prompts.md` (or "none" for idle/UI shots).
 - Local AI state shown at capture time.
 - Chrome version and operating system.

@@ -31,6 +31,13 @@ Supported sites:
 - ChatGPT at `chat.openai.com`
 - Claude at `claude.ai`
 - Gemini at `gemini.google.com`
+- Microsoft Copilot at `copilot.com`, `copilot.microsoft.com`, and `bing.com/chat`
+- DeepL at `deepl.com`
+- LanguageTool at `languagetool.org`
+- Poe at `poe.com`
+- Mistral at `chat.mistral.ai`
+- Perplexity AI at `perplexity.ai`
+- HuggingChat at `huggingface.co/chat`
 
 Other browsers and sites are outside the first public beta support scope.
 

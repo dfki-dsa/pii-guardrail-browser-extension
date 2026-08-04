@@ -6,7 +6,7 @@ import { insertTextCompat } from './adapter-interface';
  * Used when no site-specific adapter matches the current hostname.
  */
 export class GenericAdapter implements SiteAdapter {
-  readonly name = 'Generic';
+  readonly name: string = 'Generic';
 
   getInputElement(): HTMLElement | null {
     return (

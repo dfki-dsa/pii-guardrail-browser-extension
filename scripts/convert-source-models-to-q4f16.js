@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
-const DEFAULT_PYTHON = 'python3';
+const DEFAULT_PYTHON = './.venv/Scripts/python.exe';
 const DEFAULT_OUTPUT_ROOT = path.join('generated', 'models', 'ner');
 const DEFAULT_BITS = 4;
 const DEFAULT_BLOCK_SIZE = 32;

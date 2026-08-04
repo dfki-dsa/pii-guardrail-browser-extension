@@ -35,6 +35,13 @@ Developed at the [German Research Center for Artificial Intelligence (DFKI)](htt
 - ChatGPT (`chat.openai.com`, `chatgpt.com`)
 - Claude (`claude.ai`)
 - Gemini (`gemini.google.com`)
+- Microsoft Copilot (`copilot.com`, `copilot.microsoft.com`, `bing.com/chat`)
+- DeepL (`deepl.com`)
+- LanguageTool (`languagetool.org`)
+- Poe (`poe.com`)
+- Mistral (`chat.mistral.ai`)
+- Perplexity AI (`perplexity.ai`)
+- HuggingChat (`huggingface.co/chat`)
 
 Generic or custom sites are not supported in this beta.
 
