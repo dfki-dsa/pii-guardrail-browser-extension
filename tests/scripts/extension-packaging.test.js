@@ -149,21 +149,7 @@ describe('extension NER asset packaging', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, '../../manifest.json'), 'utf8')
     );
-    const monitoredHosts = [
-      'https://chat.openai.com/*',
-      'https://chatgpt.com/*',
-      'https://claude.ai/*',
-      'https://copilot.com/*',
-      'https://copilot.microsoft.com/*',
-      'https://www.bing.com/chat*',
-      'https://gemini.google.com/*',
-      'https://www.deepl.com/*',
-      'https://languagetool.org/*',
-      'https://poe.com/*',
-      'https://chat.mistral.ai/*',
-      'https://www.perplexity.ai/*',
-      'https://huggingface.co/chat*',
-    ];
+    const monitoredHosts = manifest.host_permissions;
 
     expect(manifest.web_accessible_resources).toEqual(
       expect.arrayContaining([
@@ -178,21 +164,7 @@ describe('extension NER asset packaging', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, '../../manifest.json'), 'utf8')
     );
-    const monitoredHosts = [
-      'https://chat.openai.com/*',
-      'https://chatgpt.com/*',
-      'https://claude.ai/*',
-      'https://copilot.com/*',
-      'https://copilot.microsoft.com/*',
-      'https://www.bing.com/chat*',
-      'https://gemini.google.com/*',
-      'https://www.deepl.com/*',
-      'https://languagetool.org/*',
-      'https://poe.com/*',
-      'https://chat.mistral.ai/*',
-      'https://www.perplexity.ai/*',
-      'https://huggingface.co/chat*',
-    ];
+    const monitoredHosts = manifest.host_permissions;
     const isolatedScript = manifest.content_scripts.find((entry) =>
       entry.js.includes('content/content-script.js')
     );

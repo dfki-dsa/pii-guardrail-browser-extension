@@ -198,4 +198,26 @@ describe('PasteInterceptor', () => {
     expect(callbacks.onPiiDetected).not.toHaveBeenCalled();
     expect(callbacks.onNoPii).not.toHaveBeenCalled();
   });
+
+  it('restores paste into the specific target editable element rather than default adapter input', () => {
+    const defaultInput = { focus: jest.fn() } as unknown as HTMLElement;
+    const specificTargetInput = { focus: jest.fn() } as unknown as HTMLElement;
+
+    const testAdapter: SiteAdapter = {
+      name: 'test',
+      getInputElement: () => defaultInput,
+      getResponseElements: () => [],
+      insertText: jest.fn(),
+      observeResponses: jest.fn() as unknown as SiteAdapter['observeResponses'],
+    };
+
+    const callbacks = makeCallbacks();
+    const interceptor = new PasteInterceptor(testAdapter, callbacks);
+
+    (interceptor as any).targetElement = specificTargetInput;
+    interceptor.pasteOriginal('restored text');
+
+    expect(testAdapter.insertText).toHaveBeenCalledWith(specificTargetInput, 'restored text');
+    expect(testAdapter.insertText).not.toHaveBeenCalledWith(defaultInput, 'restored text');
+  });
 });

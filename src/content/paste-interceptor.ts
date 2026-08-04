@@ -54,6 +54,7 @@ export class PasteInterceptor {
   private activeRequestId: string | null = null;
   private canceledRequestIds = new Set<string>();
   private savedSelection: SavedSelection | null = null;
+  private targetElement: HTMLElement | null = null;
   private activePasteText: string | null = null;
 
   constructor(adapter: SiteAdapter, callbacks: PasteInterceptorCallbacks) {
@@ -123,6 +124,8 @@ export class PasteInterceptor {
 
     if (!inputElement) return;
 
+    this.targetElement = inputElement;
+
     console.log(
       '[PG:content] PASTE EVENT DETECTED! Target:',
       (event.target as any)?.tagName,
@@ -180,6 +183,7 @@ export class PasteInterceptor {
         this.activeRequestId = null;
         this.activePasteText = null;
         this.savedSelection = null;
+        this.targetElement = null;
         this.callbacks.onCanceled(false);
         return;
       }
@@ -238,6 +242,7 @@ export class PasteInterceptor {
     } finally {
       this.activePasteText = null;
       this.savedSelection = null;
+      this.targetElement = null;
     }
   }
 
@@ -256,19 +261,21 @@ export class PasteInterceptor {
 
   /** Insert original text into input (fallback on error). */
   pasteOriginal(text: string): void {
-    const input = this.adapter.getInputElement();
+    const input = this.savedSelection?.inputElement || this.targetElement || this.adapter.getInputElement();
     if (input) {
       this.restoreSelection();
       this.adapter.insertText(input, text);
     }
+    this.targetElement = null;
   }
 
   /** Insert anonymized text into input. */
   pasteAnonymized(text: string): void {
-    const input = this.adapter.getInputElement();
+    const input = this.savedSelection?.inputElement || this.targetElement || this.adapter.getInputElement();
     if (input) {
       this.restoreSelection();
       this.adapter.insertText(input, text);
     }
+    this.targetElement = null;
   }
 }
