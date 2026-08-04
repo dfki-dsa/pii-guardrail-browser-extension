@@ -362,7 +362,7 @@ function showReviewOverlay(
           anonymizedText = result.text;
         }
 
-        interceptor.pasteAnonymized(anonymizedText);
+        interceptor.pasteAnonymized(anonymizedText, originalText);
 
         // Persist conversation-scoped map (still used by the de-anon banner
         // for the current view, regardless of vault state).

@@ -53,8 +53,7 @@ export class PasteInterceptor {
   private requestCounter = 0;
   private activeRequestId: string | null = null;
   private canceledRequestIds = new Set<string>();
-  private savedSelection: SavedSelection | null = null;
-  private targetElement: HTMLElement | null = null;
+  private activePastes = new Map<string, { targetElement: HTMLElement | null, savedSelection: SavedSelection | null }>();
   private activePasteText: string | null = null;
 
   constructor(adapter: SiteAdapter, callbacks: PasteInterceptorCallbacks) {
@@ -124,8 +123,6 @@ export class PasteInterceptor {
 
     if (!inputElement) return;
 
-    this.targetElement = inputElement;
-
     console.log(
       '[PG:content] PASTE EVENT DETECTED! Target:',
       (event.target as any)?.tagName,
@@ -136,16 +133,16 @@ export class PasteInterceptor {
     const text = event.clipboardData?.getData('text/plain');
     if (!text || text.length < MIN_PASTE_LENGTH) return;
 
-    // Save the current cursor/selection before preventing default —
-    // this lets us insert at the right position after async detection.
-    this.savedSelection = null;
+    let savedSelection: SavedSelection | null = null;
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
-      this.savedSelection = {
+      savedSelection = {
         range: selection.getRangeAt(0).cloneRange(),
         inputElement,
       };
     }
+
+    this.activePastes.set(text, { targetElement: inputElement, savedSelection });
 
     // Block the default paste
     event.preventDefault();
@@ -182,8 +179,7 @@ export class PasteInterceptor {
       if (response?.type === 'DETECTION_CANCELED') {
         this.activeRequestId = null;
         this.activePasteText = null;
-        this.savedSelection = null;
-        this.targetElement = null;
+        this.activePastes.delete(text);
         this.callbacks.onCanceled(false);
         return;
       }
@@ -212,7 +208,7 @@ export class PasteInterceptor {
 
       if (isExtensionReloadError(errorMessage)) {
         console.warn('[PG:content] Extension reloaded; refresh this page to reattach Privacy Guardrail.');
-        this.savedSelection = null;
+        this.activePastes.delete(text);
         this.callbacks.onError('Extension reloaded. Refresh this page and paste again.');
         return;
       }
@@ -241,41 +237,46 @@ export class PasteInterceptor {
       console.error('[PG:content] Cancel decision failed:', error);
     } finally {
       this.activePasteText = null;
-      this.savedSelection = null;
-      this.targetElement = null;
+      if (text) {
+        this.activePastes.delete(text);
+      }
     }
-  }
-
-  /** Restore the saved cursor position so text inserts at the original caret. */
-  private restoreSelection(): void {
-    if (!this.savedSelection) return;
-    const { range, inputElement } = this.savedSelection;
-    inputElement.focus();
-    const selection = window.getSelection();
-    if (selection) {
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-    this.savedSelection = null;
   }
 
   /** Insert original text into input (fallback on error). */
   pasteOriginal(text: string): void {
-    const input = this.savedSelection?.inputElement || this.targetElement || this.adapter.getInputElement();
+    const state = this.activePastes.get(text);
+    const input = state?.savedSelection?.inputElement || state?.targetElement || this.adapter.getInputElement();
     if (input) {
-      this.restoreSelection();
+      if (state?.savedSelection) {
+        input.focus();
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(state.savedSelection.range);
+        }
+      }
       this.adapter.insertText(input, text);
     }
-    this.targetElement = null;
+    this.activePastes.delete(text);
   }
 
   /** Insert anonymized text into input. */
-  pasteAnonymized(text: string): void {
-    const input = this.savedSelection?.inputElement || this.targetElement || this.adapter.getInputElement();
+  pasteAnonymized(text: string, originalText?: string): void {
+    const key = originalText || text;
+    const state = this.activePastes.get(key);
+    const input = state?.savedSelection?.inputElement || state?.targetElement || this.adapter.getInputElement();
     if (input) {
-      this.restoreSelection();
+      if (state?.savedSelection) {
+        input.focus();
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(state.savedSelection.range);
+        }
+      }
       this.adapter.insertText(input, text);
     }
-    this.targetElement = null;
+    this.activePastes.delete(key);
   }
 }

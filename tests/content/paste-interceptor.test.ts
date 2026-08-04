@@ -214,7 +214,7 @@ describe('PasteInterceptor', () => {
     const callbacks = makeCallbacks();
     const interceptor = new PasteInterceptor(testAdapter, callbacks);
 
-    (interceptor as any).targetElement = specificTargetInput;
+    (interceptor as any).activePastes.set('restored text', { targetElement: specificTargetInput, savedSelection: null });
     interceptor.pasteOriginal('restored text');
 
     expect(testAdapter.insertText).toHaveBeenCalledWith(specificTargetInput, 'restored text');
