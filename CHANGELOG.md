@@ -4,6 +4,10 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
+## [0.3.3] - Public Beta
+
+- Fixed copy/paste interception for overlapping updates
+
 ## [0.3.2] - Public Beta
 
 - Added terms of use, release legal notices, and packaged legal documents for GitHub release artifacts
