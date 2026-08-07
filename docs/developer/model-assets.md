@@ -40,7 +40,7 @@ Create a Python environment for conversion tools:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
-python -m pip install -U "huggingface_hub[cli]" onnx onnxruntime onnx-ir sympy
+python -m pip install -U "huggingface_hub[cli]" onnx onnxruntime onnx-ir sympy tokenizers
 ```
 
 Download the needed upstream files into the local source cache:
@@ -48,6 +48,7 @@ Download the needed upstream files into the local source cache:
 ```bash
 mkdir -p .model-sources
 hf download bardsai/eu-pii-anonimization-multilang \
+  --revision 6de9f686549277a3dd4233ebce14d8117ffbe128 \
   --include "config.json" \
   --include "tokenizer.json" \
   --include "tokenizer_config.json" \
@@ -84,6 +85,41 @@ npm run convert:model:q4f16:bardsai
 ```
 
 The script quantizes the fp16 model (or creates an fp16 intermediate from `onnx/model.onnx`) with ONNX Runtime's MatMulNBits 4-bit weight-only quantization. Defaults are `bits=4`, `block_size=32`, symmetric weights, `QOperator` format, `MatMul` ops only; see `--help` for overrides. The output is written directly in external-data format (`model_q4f16.onnx` plus `model_q4f16.onnx.data`) together with a conversion manifest, so no separate external-data repackaging step is needed. Validation asserts that every external tensor records the `model_q4f16.onnx.data` location the runtime passes to ONNX Runtime via `session_options.externalData`, and the manifest records size and SHA-256 for both the graph and the weights sidecar. Pass `--force` to replace an existing output. The Python environment additionally needs `onnx-ir` for the MatMulNBits quantizer import.
+
+## Reproducible Optimized Release Model
+
+For the optimized BardsAI release model, start with a prepared **external-data**
+fp16 baseline in a temporary directory, then run the single optimization command.
+Keeping the baseline separate means the command can safely write the final
+runtime model to the standard generated path.
+
+```bash
+npm run prepare:model:bardsai -- \
+  --source-dir .model-sources/bardsai-eu-pii-anonimization-multilang \
+  --output-dir /private/tmp/bardsai-fp16-baseline \
+  --force
+
+node scripts/convert-onnx-to-external-data.js \
+  --input /private/tmp/bardsai-fp16-baseline/onnx/model_fp16.onnx \
+  --python .venv/bin/python \
+  --force
+
+npm run optimize:model:bardsai -- \
+  --source-dir /private/tmp/bardsai-fp16-baseline \
+  --output-dir generated/models/ner/bardsai-eu-pii-anonimization-multilang \
+  --python .venv/bin/python \
+  --force
+```
+
+The optimizer preserves the EU-script tokenizer rows, replaces the fp16 word
+embedding table with per-row int8 plus fp16 scales, creates the q4f16 MatMul
+artifact, and rejects label changes on the multilingual synthetic PII samples.
+It never modifies the supplied baseline and only replaces the final output
+after every transformation and validation succeeds, so a failed `--force` run
+keeps the last working artifact. Both source and generated model directories
+remain ignored by Git. Use Python 3.10 or newer for this step:
+the required ONNX Runtime MatMulNBits API is unavailable in the Python 3.9
+runtime bundled with older macOS releases.
 
 If the source directory only has PyTorch or safetensors weights, export ONNX first with Optimum, then pass the exported directory to `prepare:model:bardsai`.
 
