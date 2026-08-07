@@ -165,7 +165,7 @@ describe('extension NER asset packaging', () => {
     );
   });
 
-  test('injects the clipboard interceptor page script on every monitored chat host', () => {
+  test('injects paste guards before page scripts on every monitored chat host', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, '../../manifest.json'), 'utf8')
     );
@@ -182,7 +182,10 @@ describe('extension NER asset packaging', () => {
       entry.js.includes('content/clipboard-interceptor-page.js')
     );
 
-    expect(isolatedScript.matches).toEqual(monitoredHosts);
+    expect(isolatedScript).toMatchObject({
+      matches: monitoredHosts,
+      run_at: 'document_start',
+    });
     expect(pageScript).toMatchObject({
       matches: monitoredHosts,
       run_at: 'document_start',

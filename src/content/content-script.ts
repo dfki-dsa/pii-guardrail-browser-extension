@@ -90,6 +90,10 @@ let lastSystemStatus: SystemCompatibilityStatus | null = null;
 let lastNerStatus: NerStatus | null = null;
 let activityListenersStarted = false;
 let lastActivityHeartbeatAt = 0;
+let releasePasteInterceptor: (() => void) | null = null;
+const pasteInterceptorReady = new Promise<void>((resolve) => {
+  releasePasteInterceptor = resolve;
+});
 /**
  * In-memory copy of the identity vault. Loaded once at init, kept up to
  * date by listening for chrome.storage changes (so an edit made in the
@@ -235,6 +239,13 @@ function showIndicator(text: string, durationMs: number): void {
     el.style.opacity = '0';
     setTimeout(() => el.remove(), 300);
   }, durationMs);
+}
+
+function waitForDocumentBody(): Promise<void> {
+  if (document.body) return Promise.resolve();
+  return new Promise((resolve) => {
+    document.addEventListener('DOMContentLoaded', () => resolve(), { once: true });
+  });
 }
 
 // --- Review overlay integration ---
@@ -476,7 +487,13 @@ const interceptor = new PasteInterceptor(adapter, {
   },
 
   onExplicitCancelDecision: async () => chooseAfterExplicitScanCancel(),
+}, {
+  waitForReady: () => pasteInterceptorReady,
 });
+
+// Register synchronously at document_start so page scripts cannot win the
+// capture-phase race while this content script restores local state.
+interceptor.start();
 
 // --- Response observer with de-anonymization banners ---
 
@@ -556,14 +573,18 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse): undefine
 async function init(): Promise<void> {
   // Load settings and adaptive thresholds
   settings = await loadSettings();
+  interceptor.setEnabled(settings.enabled);
 
   if (!settings.enabled) {
+    releasePasteInterceptor?.();
+    releasePasteInterceptor = null;
     if (settings.debug) {
       console.log('[PG:content] Extension disabled, not activating');
     }
     return;
   }
 
+  await waitForDocumentBody();
   await maybeShowCriticalLocalAiModal();
 
   pageStatusChip = new PageStatusChip(settings.theme);
@@ -579,6 +600,9 @@ async function init(): Promise<void> {
   if (settings.identityVaultEnabled) {
     identityVault = await loadIdentityVault();
   }
+
+  releasePasteInterceptor?.();
+  releasePasteInterceptor = null;
 
   // React to vault edits made elsewhere (options page, other tabs).
   // Without this, a user editing the synthetic value of "John Doe" in the
@@ -627,8 +651,7 @@ async function init(): Promise<void> {
     });
   }
 
-  // Start interception and observation
-  interceptor.start();
+  // Start observation and clipboard restoration after the DOM is available.
   startSupportedPageActivityHeartbeat();
   responseObserver.start();
   clipboardInterceptor.setTheme(settings.theme);
@@ -643,4 +666,14 @@ async function init(): Promise<void> {
   }
 }
 
-init();
+void init().catch((error) => {
+  // Do not leave an initial paste held if local state restoration fails.
+  // Disabling the interceptor restores the user's original paste through the
+  // guarded handoff rather than silently dropping it.
+  interceptor.setEnabled(false);
+  releasePasteInterceptor?.();
+  releasePasteInterceptor = null;
+  if (settings?.debug) {
+    console.error('[PG:content] Initialization failed:', error);
+  }
+});

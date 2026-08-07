@@ -4,6 +4,10 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
+## Unreleased
+
+- Fixed ChatGPT paste interception so the local review flow blocks the native paste before the user approves it.
+
 ## [0.3.2] - Public Beta
 
 - Added terms of use, release legal notices, and packaged legal documents for GitHub release artifacts

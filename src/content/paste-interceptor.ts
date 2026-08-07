@@ -37,6 +37,11 @@ export interface PasteInterceptorCallbacks {
   onExplicitCancelDecision?: (text: string) => Promise<CanceledPasteDecision> | CanceledPasteDecision;
 }
 
+export interface PasteInterceptorOptions {
+  /** Delays detection until the content script has restored its local state. */
+  waitForReady?: () => Promise<void>;
+}
+
 /** Saved cursor/selection state so we can restore it after async detection. */
 interface SavedSelection {
   range: Range;
@@ -55,21 +60,28 @@ export class PasteInterceptor {
   private canceledRequestIds = new Set<string>();
   private savedSelection: SavedSelection | null = null;
   private activePasteText: string | null = null;
+  private waitForReady: () => Promise<void>;
 
-  constructor(adapter: SiteAdapter, callbacks: PasteInterceptorCallbacks) {
+  constructor(
+    adapter: SiteAdapter,
+    callbacks: PasteInterceptorCallbacks,
+    options: PasteInterceptorOptions = {},
+  ) {
     this.adapter = adapter;
     this.callbacks = callbacks;
+    this.waitForReady = options.waitForReady ?? (() => Promise.resolve());
   }
 
   /** Start listening for paste events on the input element. */
   start(): void {
-    // Listen on document to catch pastes even if the input element changes
-    document.addEventListener('paste', this.handlePaste, true);
+    // Capture on window so a page-level document listener cannot insert the
+    // clipboard contents before the asynchronous review flow holds the paste.
+    window.addEventListener('paste', this.handlePaste, true);
   }
 
   /** Stop listening for paste events. */
   stop(): void {
-    document.removeEventListener('paste', this.handlePaste, true);
+    window.removeEventListener('paste', this.handlePaste, true);
   }
 
   /** Enable or disable interception. */
@@ -123,9 +135,28 @@ export class PasteInterceptor {
     event.preventDefault();
     event.stopPropagation();
 
-    this.callbacks.onAnalyzing();
-    this.analyze(text);
+    void this.processPaste(text);
   };
+
+  private async processPaste(text: string): Promise<void> {
+    try {
+      await this.waitForReady();
+    } catch (error) {
+      this.callbacks.onError(getErrorMessage(error));
+      this.pasteOriginal(text);
+      return;
+    }
+
+    // Settings can disable interception while the synchronous guard holds an
+    // initial page-load paste. Restore that paste once the preference is known.
+    if (!this.enabled) {
+      this.pasteOriginal(text);
+      return;
+    }
+
+    this.callbacks.onAnalyzing();
+    await this.analyze(text);
+  }
 
   private async analyze(text: string): Promise<void> {
     const requestId = `pg_${++this.requestCounter}_${Date.now()}`;
