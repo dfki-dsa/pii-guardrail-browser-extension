@@ -6,7 +6,11 @@ The project follows public beta release notes for `0.x` versions.
 
 ## Unreleased
 
+## [0.4.0] - Public Beta
+
 - Fixed ChatGPT paste interception so the local review flow blocks the native paste before the user approves it.
+- Reduced the shipped Local AI package size by deduplicating WASM assets, pruning the tokenizer vocabulary, and quantizing embedding weights to int8.
+- Added reproducible tooling and documentation for preparing the optimized BardsAI model assets.
 
 ## [0.3.2] - Public Beta
 
