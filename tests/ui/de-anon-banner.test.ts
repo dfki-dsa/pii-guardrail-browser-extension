@@ -220,4 +220,35 @@ describe('attachDeAnonBanner', () => {
     expect(copiedText).not.toContain('[EMAIL_1]');
     expect(copiedText).toContain('[PHONE_1]');
   });
+
+  it('still attaches once content that resolves arrives later', () => {
+    const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+    const responseElement = document.createElement('div');
+    document.body.append(responseElement);
+
+    // A streaming response inspected before any placeholder has arrived.
+    // Marking the element as handled here used to suppress the banner for
+    // good, so the reply never became revealable.
+    attachDeAnonBanner(responseElement, entityMap);
+    expect(document.querySelector('.pg-deanon-host')).toBeNull();
+    expect(responseElement.dataset.pgBanner).toBeUndefined();
+
+    responseElement.textContent = 'Reply about [PERSON_1]';
+    attachDeAnonBanner(responseElement, entityMap);
+
+    expect(document.querySelectorAll('.pg-deanon-host')).toHaveLength(1);
+    expect(responseElement.dataset.pgBanner).toBe('attached');
+  });
+
+  it('does not attach a second banner to the same response element', () => {
+    const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+    const responseElement = document.createElement('div');
+    responseElement.textContent = 'Reply about [PERSON_1]';
+    document.body.append(responseElement);
+
+    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, entityMap);
+
+    expect(document.querySelectorAll('.pg-deanon-host')).toHaveLength(1);
+  });
 });

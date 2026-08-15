@@ -56,7 +56,6 @@ export function attachDeAnonBanner(
 ): void {
   // Don't attach twice
   if (responseElement.dataset.pgBanner === 'attached') return;
-  responseElement.dataset.pgBanner = 'attached';
 
   // Build a combined detection text spanning visible markdown and any
   // descendant form-control values (artifact cards render their content
@@ -71,6 +70,12 @@ export function attachDeAnonBanner(
   const { matches } = resolveText(text, entityMap);
   const totalRevealable = matches.length;
   if (totalRevealable === 0) return;
+
+  // Claim the element only once a banner is actually going to be rendered.
+  // Marking it before the bail-out above would permanently suppress the
+  // banner for any element first inspected while its content was still
+  // streaming and had nothing resolvable yet.
+  responseElement.dataset.pgBanner = 'attached';
 
   // Create banner host with Shadow DOM
   const host = document.createElement('div');
