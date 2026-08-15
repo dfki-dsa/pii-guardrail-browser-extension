@@ -15,6 +15,9 @@ export const MIN_PASTE_LENGTH = 10;
 /** Maximum text length before chunking for NER. */
 export const MAX_TEXT_LENGTH = 5000;
 
+/** How often (ms) to re-read the URL for same-document navigation. */
+export const CONVERSATION_URL_POLL_MS = 500;
+
 /** Delay (ms) before de-anonymizing a streaming response. */
 export const RESPONSE_DEBOUNCE_MS = 500;
 

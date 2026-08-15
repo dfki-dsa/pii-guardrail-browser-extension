@@ -34,6 +34,7 @@ import {
   saveSettings,
   loadEntityMap,
   saveEntityMap,
+  migrateEntityMap,
   logFeedback,
 } from '../shared/storage';
 import { findConflictingPattern } from '../shared/list-conflicts';
@@ -58,7 +59,7 @@ import {
 } from '../shared/feedback';
 import { prepareReviewSpans } from './review-spans';
 import { resolveThreshold } from '../shared/sensitivity-resolver';
-import { LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, CHIP_FADE_MS } from '../shared/constants';
+import { CONVERSATION_URL_POLL_MS, LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, CHIP_FADE_MS } from '../shared/constants';
 import type { PiiSpan, FeedbackEntry, Settings, AllowlistEntry, CancelDetectionBehavior, NerStatus, NerStatusResponse, SystemCompatibilityStatus, SystemCompatibilityStatusResponse } from '../shared/message-types';
 
 // --- Adapter selection ---
@@ -83,7 +84,19 @@ const adapter = selectAdapter();
 let entityMap = new EntityMap();
 let settings: Settings;
 let adaptiveThresholds: Record<string, number> = {};
-const conversationUrl = window.location.href.split('?')[0];
+/**
+ * Storage key for this conversation's placeholder mappings.
+ *
+ * Not a constant: chat sites create the conversation on the first send and
+ * rewrite the URL in place, and users switch conversations without a page
+ * load. `watchConversationUrl` keeps this current and moves or reloads the
+ * mappings to match.
+ */
+let conversationUrl = normalizeConversationUrl(window.location.href);
+
+function normalizeConversationUrl(href: string): string {
+  return href.split('?')[0].split('#')[0];
+}
 let scanningIndicator: ScanningIndicator | null = null;
 let pageStatusChip: PageStatusChip | null = null;
 let lastSystemStatus: SystemCompatibilityStatus | null = null;
@@ -245,6 +258,50 @@ function showIndicator(text: string, durationMs: number): void {
     el.style.opacity = '0';
     setTimeout(() => el.remove(), 300);
   }, durationMs);
+}
+
+/**
+ * Keep `conversationUrl` in step with same-document navigation.
+ *
+ * Content scripts run in an isolated world, so patching `history.pushState`
+ * here would never observe the page's own calls. Polling the URL is the
+ * dependable option; `popstate` is added so back/forward registers at once.
+ */
+function watchConversationUrl(): void {
+  const check = (): void => {
+    const next = normalizeConversationUrl(window.location.href);
+    if (next === conversationUrl) return;
+    const previous = conversationUrl;
+    conversationUrl = next;
+    void handleConversationChange(previous, next);
+  };
+
+  window.addEventListener('popstate', check);
+  window.setInterval(check, CONVERSATION_URL_POLL_MS);
+}
+
+async function handleConversationChange(previous: string, next: string): Promise<void> {
+  const leftNewChatScreen = adapter.hasConversationId
+    ? !adapter.hasConversationId(previous) && adapter.hasConversationId(next)
+    : false;
+
+  if (leftNewChatScreen && entityMap.size > 0) {
+    // The site has just created the conversation and rewritten the URL.
+    // Move the mappings recorded while composing onto the URL the user will
+    // come back to, otherwise they are stranded under the "new chat" key.
+    await migrateEntityMap(previous, next, entityMap.toStored());
+    if (settings?.debug) {
+      console.log(`[PG:content] Conversation created; ${entityMap.size} mapping(s) moved to ${next}`);
+    }
+    return;
+  }
+
+  // A genuinely different conversation. Adopt its stored mappings rather
+  // than carrying the previous conversation's state into it.
+  entityMap = new EntityMap(await loadEntityMap(next));
+  if (settings?.debug) {
+    console.log(`[PG:content] Switched conversation; ${entityMap.size} mapping(s) restored`);
+  }
 }
 
 function waitForDocumentBody(): Promise<void> {
@@ -659,6 +716,7 @@ async function init(): Promise<void> {
 
   // Start observation and clipboard restoration after the DOM is available.
   startSupportedPageActivityHeartbeat();
+  watchConversationUrl();
   responseObserver.start();
   clipboardInterceptor.setTheme(settings.theme);
   clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);

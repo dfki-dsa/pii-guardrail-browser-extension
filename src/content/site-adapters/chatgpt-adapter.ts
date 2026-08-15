@@ -1,5 +1,5 @@
 import type { SiteAdapter } from './adapter-interface';
-import { insertTextCompat } from './adapter-interface';
+import { insertTextCompat, urlPath } from './adapter-interface';
 
 /**
  * ChatGPT serves two different web builds depending on auth state, and their
@@ -58,6 +58,11 @@ function isRendered(element: HTMLElement): boolean {
 
 export class ChatGptAdapter implements SiteAdapter {
   readonly name = 'ChatGPT';
+
+  hasConversationId(url: string): boolean {
+    // chatgpt.com/ -> /c/<uuid>; GPTs land on /g/<slug> then /g/<slug>/c/<uuid>.
+    return urlPath(url).includes('/c/');
+  }
 
   getInputElement(): HTMLElement | null {
     let fallback: HTMLElement | null = null;

@@ -190,6 +190,43 @@ export async function loadEntityMap(
   return maps[conversationUrl] || {};
 }
 
+/**
+ * Move placeholder mappings recorded before a conversation existed onto the
+ * URL the site assigned it.
+ *
+ * Every supported chat site creates the conversation on the first send and
+ * rewrites the URL in place. Anything anonymized while composing is filed
+ * under the transient "new chat" URL, so without this the mappings become
+ * unreachable the moment the page is reloaded.
+ *
+ * Only the supplied entries move — the ones this page session actually
+ * produced. A second tab composing its own new chat keeps its pending
+ * mappings under the transient URL untouched.
+ */
+export async function migrateEntityMap(
+  fromUrl: string,
+  toUrl: string,
+  entries: StoredEntityMap,
+): Promise<void> {
+  const keys = Object.keys(entries);
+  if (keys.length === 0 || fromUrl === toUrl) return;
+
+  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
+  const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
+
+  maps[toUrl] = { ...maps[toUrl], ...entries };
+
+  const source = maps[fromUrl];
+  if (source) {
+    for (const key of keys) {
+      if (source[key] === entries[key]) delete source[key];
+    }
+    if (Object.keys(source).length === 0) delete maps[fromUrl];
+  }
+
+  await chrome.storage.local.set({ [ENTITY_MAPS_KEY]: maps });
+}
+
 /** Clear entity maps for a specific conversation or all conversations. */
 export async function clearEntityMaps(conversationUrl?: string): Promise<void> {
   if (conversationUrl) {
