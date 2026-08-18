@@ -126,6 +126,10 @@ let lastSystemStatus: SystemCompatibilityStatus | null = null;
 let lastNerStatus: NerStatus | null = null;
 let activityListenersStarted = false;
 let lastActivityHeartbeatAt = 0;
+let releasePasteInterceptor: (() => void) | null = null;
+const pasteInterceptorReady = new Promise<void>((resolve) => {
+  releasePasteInterceptor = resolve;
+});
 /**
  * In-memory copy of the identity vault. Loaded once at init, kept up to
  * date by listening for chrome.storage changes (so an edit made in the
@@ -273,6 +277,13 @@ function showIndicator(text: string, durationMs: number): void {
   }, durationMs);
 }
 
+function waitForDocumentBody(): Promise<void> {
+  if (document.body) return Promise.resolve();
+  return new Promise((resolve) => {
+    document.addEventListener('DOMContentLoaded', () => resolve(), { once: true });
+  });
+}
+
 // --- Review overlay integration ---
 
 /**
@@ -313,6 +324,7 @@ function makePreviewResolverFactory(
 function showReviewOverlay(
   originalText: string,
   rawSpans: PiiSpan[],
+  pasteId: string,
   timings?: { totalMs: number },
 ): void {
   const spans = prepareReviewSpans(originalText, rawSpans, settings, adaptiveThresholds);
@@ -320,7 +332,7 @@ function showReviewOverlay(
   if (spans.length === 0) {
     // After filtering, nothing left — paste original
     showIndicator('\u2713 No actionable personal data found', NO_PII_INDICATOR_MS);
-    interceptor.pasteOriginal(originalText);
+    interceptor.pasteOriginal(originalText, pasteId);
     return;
   }
 
@@ -330,7 +342,7 @@ function showReviewOverlay(
     {
       onConfirm: (approvedSpans: PiiSpan[]) => {
         if (approvedSpans.length === 0) {
-          interceptor.pasteOriginal(originalText);
+          interceptor.pasteOriginal(originalText, pasteId);
           return;
         }
 
@@ -362,7 +374,7 @@ function showReviewOverlay(
           anonymizedText = result.text;
         }
 
-        interceptor.pasteAnonymized(anonymizedText, originalText);
+        interceptor.pasteAnonymized(anonymizedText, pasteId);
 
         // Persist conversation-scoped map (still used by the de-anon banner
         // for the current view, regardless of vault state).
@@ -379,13 +391,13 @@ function showReviewOverlay(
       },
 
       onPasteOriginal: () => {
-        interceptor.pasteOriginal(originalText);
+        interceptor.pasteOriginal(originalText, pasteId);
       },
 
       onCancel: () => {
         void chooseAfterExplicitScanCancel().then((decision) => {
           if (decision === 'paste-original') {
-            interceptor.pasteOriginal(originalText);
+            interceptor.pasteOriginal(originalText, pasteId);
           }
           if (settings.debug) {
             console.log(`[PG:content] Overlay cancelled, ${decision === 'paste-original' ? 'original pasted' : 'nothing pasted'}`);
@@ -484,17 +496,17 @@ const interceptor = new PasteInterceptor(adapter, {
     scanningIndicator.start();
   },
 
-  onNoPii: (text) => {
+  onNoPii: (text, pasteId) => {
     scanningIndicator?.stop();
     scanningIndicator = null;
     showIndicator('\u2713 No personal data found', NO_PII_INDICATOR_MS);
-    interceptor.pasteOriginal(text);
+    interceptor.pasteOriginal(text, pasteId);
   },
 
-  onPiiDetected: (text, spans, timings) => {
+  onPiiDetected: (text, spans, pasteId, timings) => {
     scanningIndicator?.stop();
     scanningIndicator = null;
-    showReviewOverlay(text, spans, timings);
+    showReviewOverlay(text, spans, pasteId, timings);
   },
 
   onError: (error) => {
@@ -512,7 +524,13 @@ const interceptor = new PasteInterceptor(adapter, {
   },
 
   onExplicitCancelDecision: async () => chooseAfterExplicitScanCancel(),
+}, {
+  waitForReady: () => pasteInterceptorReady,
 });
+
+// Register synchronously at document_start so page scripts cannot win the
+// capture-phase race while this content script restores local state.
+interceptor.start();
 
 // --- Response observer with de-anonymization banners ---
 
@@ -590,91 +608,109 @@ chrome.runtime.onMessage.addListener((message, _sender, _sendResponse): undefine
 // --- Initialize ---
 
 async function init(): Promise<void> {
-  try {
-    // Load settings and adaptive thresholds
-    settings = await loadSettings();
+  // Load settings and adaptive thresholds
+  settings = await loadSettings();
+  interceptor.setEnabled(settings.enabled);
 
-    if (!settings.enabled) {
-      if (settings.debug) {
-        console.log('[PG:content] Extension disabled, not activating');
-      }
-      return;
-    }
-
-    await maybeShowCriticalLocalAiModal();
-
-    pageStatusChip = new PageStatusChip(settings.theme);
-    await refreshSystemStatusFromBackground();
-
-    adaptiveThresholds = await computeAdaptiveThresholds(settings.minConfidence);
-
-    // Restore entity map for this conversation
-    const stored = await loadEntityMap(conversationUrl);
-    entityMap = new EntityMap(stored);
-
-    // Restore identity vault (cross-session, cross-provider)
-    if (settings.identityVaultEnabled) {
-      identityVault = await loadIdentityVault();
-    }
-
-    // React to vault edits made elsewhere (options page, other tabs).
-    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-      chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== 'local') return;
-        if (changes['pg_identity_vault']) {
-          const next = changes['pg_identity_vault'].newValue;
-          if (next && Array.isArray(next.records)) {
-            identityVault = next;
-            if (settings.debug) {
-              console.log('[PG:content] Vault reloaded from storage event');
-            }
-          }
-        }
-        if (changes['pg_settings']) {
-          const next = changes['pg_settings'].newValue as Settings | undefined;
-          if (next) {
-            settings = next;
-            interceptor.setEnabled(settings.enabled);
-            clipboardInterceptor.setTheme(settings.theme);
-            clipboardInterceptor.setEnabled(
-              settings.enabled && settings.clipboardInterceptEnabled,
-            );
-            pageStatusChip?.setTheme(settings.theme);
-            if (!settings.enabled || settings.nerProvider === 'off') {
-              reportSupportedPageActivity(false, true);
-            } else {
-              reportVisibility();
-            }
-            if (settings.debug) {
-              console.log('[PG:content] Settings reloaded from storage event');
-            }
-          }
-        }
-        if (changes[SYSTEM_CHECK_STORAGE_KEY]) {
-          const next = changes[SYSTEM_CHECK_STORAGE_KEY].newValue as SystemCompatibilityStatus | undefined;
-          lastSystemStatus = next ?? null;
-          refreshPageStatusChip();
-        }
-      });
-    }
-
-    // Start interception and observation
-    interceptor.start();
-    startSupportedPageActivityHeartbeat();
-    responseObserver.start();
-    clipboardInterceptor.setTheme(settings.theme);
-    clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);
-    clipboardInterceptor.start();
-
+  if (!settings.enabled) {
+    releasePasteInterceptor?.();
+    releasePasteInterceptor = null;
     if (settings.debug) {
-      console.log(`[PG:content] Privacy Guardrail active on ${adapter.name} (${window.location.hostname})`);
-      console.log(`[PG:content] Adaptive thresholds:`, adaptiveThresholds);
-      console.log(`[PG:content] Entity map size: ${entityMap.size}`);
-      console.log(`[PG:content] Vault size: ${identityVault.records.length}`);
+      console.log('[PG:content] Extension disabled, not activating');
     }
-  } catch (err) {
-    console.error('[PG:content] INIT ERROR:', err);
+    return;
+  }
+
+  await waitForDocumentBody();
+  await maybeShowCriticalLocalAiModal();
+
+  pageStatusChip = new PageStatusChip(settings.theme);
+  await refreshSystemStatusFromBackground();
+
+  adaptiveThresholds = await computeAdaptiveThresholds(settings.minConfidence);
+
+  // Restore entity map for this conversation
+  const stored = await loadEntityMap(conversationUrl);
+  entityMap = new EntityMap(stored);
+
+  // Restore identity vault (cross-session, cross-provider)
+  if (settings.identityVaultEnabled) {
+    identityVault = await loadIdentityVault();
+  }
+
+  releasePasteInterceptor?.();
+  releasePasteInterceptor = null;
+
+  // React to vault edits made elsewhere (options page, other tabs).
+  // Without this, a user editing the synthetic value of "John Doe" in the
+  // options page would still see the old value applied to subsequent
+  // pastes in this tab until reload.
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+      if (changes['pg_identity_vault']) {
+        const next = changes['pg_identity_vault'].newValue;
+        if (next && Array.isArray(next.records)) {
+          identityVault = next;
+          if (settings.debug) {
+            console.log('[PG:content] Vault reloaded from storage event');
+          }
+        }
+      }
+      if (changes['pg_settings']) {
+        const next = changes['pg_settings'].newValue as Settings | undefined;
+        if (next) {
+          settings = next;
+          interceptor.setEnabled(settings.enabled);
+          clipboardInterceptor.setTheme(settings.theme);
+          clipboardInterceptor.setEnabled(
+            settings.enabled && settings.clipboardInterceptEnabled,
+          );
+          pageStatusChip?.setTheme(settings.theme);
+          if (!settings.enabled || settings.nerProvider === 'off') {
+            reportSupportedPageActivity(false, true);
+          } else {
+            reportVisibility();
+          }
+          if (settings.debug) {
+            console.log('[PG:content] Settings reloaded from storage event');
+          }
+        }
+      }
+      if (changes[SYSTEM_CHECK_STORAGE_KEY]) {
+        // System-check storage updates carry the freshest tier, localAiState,
+        // and modal pending/dismissed flags. Re-derive the chip without
+        // sending another message to the background.
+        const next = changes[SYSTEM_CHECK_STORAGE_KEY].newValue as SystemCompatibilityStatus | undefined;
+        lastSystemStatus = next ?? null;
+        refreshPageStatusChip();
+      }
+    });
+  }
+
+  // Start observation and clipboard restoration after the DOM is available.
+  startSupportedPageActivityHeartbeat();
+  responseObserver.start();
+  clipboardInterceptor.setTheme(settings.theme);
+  clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);
+  clipboardInterceptor.start();
+
+  if (settings.debug) {
+    console.log(`[PG:content] Privacy Guardrail active on ${adapter.name} (${window.location.hostname})`);
+    console.log(`[PG:content] Adaptive thresholds:`, adaptiveThresholds);
+    console.log(`[PG:content] Entity map size: ${entityMap.size}`);
+    console.log(`[PG:content] Vault size: ${identityVault.records.length}`);
   }
 }
 
-init();
+void init().catch((error) => {
+  // Do not leave an initial paste held if local state restoration fails.
+  // Disabling the interceptor restores the user's original paste through the
+  // guarded handoff rather than silently dropping it.
+  interceptor.setEnabled(false);
+  releasePasteInterceptor?.();
+  releasePasteInterceptor = null;
+  if (settings?.debug) {
+    console.error('[PG:content] Initialization failed:', error);
+  }
+});

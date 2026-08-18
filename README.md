@@ -159,8 +159,12 @@ Privacy Guardrail is developed in the <a href="https://dsa.dfki.de">Data Science
 
 ### Contributors
 
+- Andrea Sipka
 - Björn Busch-Geertsema — Lead Developer
 - Sergey Redyuk — Developer
+- Siddharth Saraswat – Developer
+
+- Ruth Ikegah – Community Manager
 - Prof. Dr. Sebastian Vollmer — Principal Investigator & Project Originator
 - Rahul Sharma
 - Islam Mesabah

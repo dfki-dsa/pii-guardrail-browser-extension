@@ -1,3 +1,5 @@
+/** @jest-environment jsdom */
+
 import { PasteInterceptor, type PasteInterceptorCallbacks } from '../../src/content/paste-interceptor';
 import type { SiteAdapter } from '../../src/content/site-adapters/adapter-interface';
 import { DEFAULT_SETTINGS } from '../../src/shared/constants';
@@ -21,9 +23,110 @@ describe('PasteInterceptor', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    document.body.replaceChildren();
     (chrome.storage.local.get as jest.Mock).mockResolvedValue({
       pg_settings: DEFAULT_SETTINGS,
     });
+  });
+
+  it('holds a qualifying paste before an existing ChatGPT capture listener can receive it', async () => {
+    const input = document.createElement('div');
+    input.contentEditable = 'true';
+    document.body.append(input);
+
+    const chatGptAdapter: SiteAdapter = {
+      ...adapter,
+      getInputElement: () => input,
+    };
+    const callbacks = makeCallbacks();
+    const interceptor = new PasteInterceptor(chatGptAdapter, callbacks);
+    const chatGptCaptureListener = jest.fn();
+
+    document.addEventListener('paste', chatGptCaptureListener, true);
+    interceptor.start();
+
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { getData: () => 'Synthetic private text that needs a review before it can be pasted.' },
+    });
+    input.dispatchEvent(paste);
+
+    expect(paste.defaultPrevented).toBe(true);
+    expect(chatGptCaptureListener).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
+
+    interceptor.stop();
+    document.removeEventListener('paste', chatGptCaptureListener, true);
+  });
+
+  it('registers the paste guard before settings initialization completes', async () => {
+    const input = document.createElement('div');
+    input.contentEditable = 'true';
+    document.body.append(input);
+
+    let finishInitialization: () => void = () => undefined;
+    const initialization = new Promise<void>((resolve) => {
+      finishInitialization = resolve;
+    });
+    const callbacks = makeCallbacks();
+    const interceptor = new PasteInterceptor(
+      { ...adapter, getInputElement: () => input },
+      callbacks,
+      { waitForReady: () => initialization },
+    );
+    const pageCaptureListener = jest.fn();
+
+    document.addEventListener('paste', pageCaptureListener, true);
+    interceptor.start();
+
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { getData: () => 'Synthetic private text that is held while settings initialize.' },
+    });
+    input.dispatchEvent(paste);
+
+    expect(paste.defaultPrevented).toBe(true);
+    expect(pageCaptureListener).not.toHaveBeenCalled();
+    expect(callbacks.onAnalyzing).not.toHaveBeenCalled();
+
+    finishInitialization();
+    await Promise.resolve();
+    expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
+
+    interceptor.stop();
+    document.removeEventListener('paste', pageCaptureListener, true);
+  });
+
+  it('restores an initial paste when content initialization fails', async () => {
+    const input = document.createElement('div');
+    input.contentEditable = 'true';
+    document.body.append(input);
+    const callbacks = makeCallbacks();
+    const failingAdapter: SiteAdapter = {
+      ...adapter,
+      getInputElement: () => input,
+    };
+    const interceptor = new PasteInterceptor(failingAdapter, callbacks, {
+      waitForReady: async () => {
+        throw new Error('Initial state could not be restored');
+      },
+    });
+    interceptor.start();
+
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { getData: () => 'Synthetic private text that must not be silently lost.' },
+    });
+    input.dispatchEvent(paste);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(callbacks.onError).toHaveBeenCalledWith('Initial state could not be restored');
+    expect(failingAdapter.insertText).toHaveBeenCalledWith(input, 'Synthetic private text that must not be silently lost.');
+
+    interceptor.stop();
   });
 
   it('normalizes invalid NER model settings before detection requests', async () => {
@@ -91,7 +194,10 @@ describe('PasteInterceptor', () => {
     await interceptor.analyze('secret text');
 
     expect(callbacks.onError).toHaveBeenCalledWith('Unexpected detection failure');
-    expect(interceptor.pasteOriginal).toHaveBeenCalledWith('secret text');
+    expect(interceptor.pasteOriginal).toHaveBeenCalledWith(
+      'secret text',
+      expect.stringMatching(/^paste_/),
+    );
     expect(errorSpy).toHaveBeenCalled();
 
     errorSpy.mockRestore();
@@ -148,7 +254,10 @@ describe('PasteInterceptor', () => {
     await Promise.resolve();
 
     expect(callbacks.onExplicitCancelDecision).toHaveBeenCalledWith('secret text');
-    expect(interceptor.pasteOriginal).toHaveBeenCalledWith('secret text');
+    expect(interceptor.pasteOriginal).toHaveBeenCalledWith(
+      'secret text',
+      expect.stringMatching(/^paste_/),
+    );
     void detection;
   });
 
@@ -214,10 +323,44 @@ describe('PasteInterceptor', () => {
     const callbacks = makeCallbacks();
     const interceptor = new PasteInterceptor(testAdapter, callbacks);
 
-    (interceptor as any).activePastes.set('restored text', { targetElement: specificTargetInput, savedSelection: null });
-    interceptor.pasteOriginal('restored text');
+    (interceptor as any).activePastes.set('paste-1', { targetElement: specificTargetInput, savedSelection: null });
+    interceptor.pasteOriginal('restored text', 'paste-1');
 
     expect(testAdapter.insertText).toHaveBeenCalledWith(specificTargetInput, 'restored text');
     expect(testAdapter.insertText).not.toHaveBeenCalledWith(defaultInput, 'restored text');
+  });
+
+  it('keeps destinations separate for concurrent pastes with identical text', () => {
+    const firstTarget = { focus: jest.fn() } as unknown as HTMLElement;
+    const secondTarget = { focus: jest.fn() } as unknown as HTMLElement;
+    const testAdapter: SiteAdapter = {
+      ...adapter,
+      insertText: jest.fn(),
+    };
+    const interceptor = new PasteInterceptor(testAdapter, makeCallbacks());
+
+    (interceptor as any).activePastes.set('paste-1', {
+      targetElement: firstTarget,
+      savedSelection: null,
+    });
+    (interceptor as any).activePastes.set('paste-2', {
+      targetElement: secondTarget,
+      savedSelection: null,
+    });
+
+    interceptor.pasteOriginal('identical private text', 'paste-2');
+    interceptor.pasteOriginal('identical private text', 'paste-1');
+
+    expect(testAdapter.insertText).toHaveBeenNthCalledWith(
+      1,
+      secondTarget,
+      'identical private text',
+    );
+    expect(testAdapter.insertText).toHaveBeenNthCalledWith(
+      2,
+      firstTarget,
+      'identical private text',
+    );
+    expect((interceptor as any).activePastes.size).toBe(0);
   });
 });

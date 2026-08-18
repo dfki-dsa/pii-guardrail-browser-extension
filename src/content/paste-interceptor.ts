@@ -30,17 +30,38 @@ export type CanceledPasteDecision = 'paste-original' | 'drop';
 
 export interface PasteInterceptorCallbacks {
   onAnalyzing: () => void;
-  onNoPii: (text: string) => void;
-  onPiiDetected: (text: string, spans: PiiSpan[], timings?: { totalMs: number }) => void;
+  onNoPii: (text: string, pasteId: string) => void;
+  onPiiDetected: (
+    text: string,
+    spans: PiiSpan[],
+    pasteId: string,
+    timings?: { totalMs: number },
+  ) => void;
   onError: (error: string) => void;
   onCanceled: (explicitUserCancel?: boolean) => void;
   onExplicitCancelDecision?: (text: string) => Promise<CanceledPasteDecision> | CanceledPasteDecision;
+}
+
+export interface PasteInterceptorOptions {
+  /** Delays detection until the content script has restored its local state. */
+  waitForReady?: () => Promise<void>;
 }
 
 /** Saved cursor/selection state so we can restore it after async detection. */
 interface SavedSelection {
   range: Range;
   inputElement: HTMLElement;
+}
+
+interface PendingPaste {
+  targetElement: HTMLElement | null;
+  savedSelection: SavedSelection | null;
+}
+
+interface ActiveRequest {
+  requestId: string;
+  pasteId: string;
+  text: string;
 }
 
 /**
@@ -50,26 +71,33 @@ export class PasteInterceptor {
   private adapter: SiteAdapter;
   private callbacks: PasteInterceptorCallbacks;
   private enabled = true;
+  private pasteCounter = 0;
   private requestCounter = 0;
-  private activeRequestId: string | null = null;
+  private activeRequest: ActiveRequest | null = null;
   private canceledRequestIds = new Set<string>();
-  private activePastes = new Map<string, { targetElement: HTMLElement | null, savedSelection: SavedSelection | null }>();
-  private activePasteText: string | null = null;
+  private activePastes = new Map<string, PendingPaste>();
+  private waitForReady: () => Promise<void>;
 
-  constructor(adapter: SiteAdapter, callbacks: PasteInterceptorCallbacks) {
+  constructor(
+    adapter: SiteAdapter,
+    callbacks: PasteInterceptorCallbacks,
+    options: PasteInterceptorOptions = {},
+  ) {
     this.adapter = adapter;
     this.callbacks = callbacks;
+    this.waitForReady = options.waitForReady ?? (() => Promise.resolve());
   }
 
   /** Start listening for paste events on the input element. */
   start(): void {
-    // Listen on document to catch pastes even if the input element changes
-    document.addEventListener('paste', this.handlePaste, true);
+    // Capture on window so a page-level document listener cannot insert the
+    // clipboard contents before the asynchronous review flow holds the paste.
+    window.addEventListener('paste', this.handlePaste, true);
   }
 
   /** Stop listening for paste events. */
   stop(): void {
-    document.removeEventListener('paste', this.handlePaste, true);
+    window.removeEventListener('paste', this.handlePaste, true);
   }
 
   /** Enable or disable interception. */
@@ -78,12 +106,11 @@ export class PasteInterceptor {
   }
 
   cancelActiveDetection(): void {
-    if (!this.activeRequestId) return;
+    if (!this.activeRequest) return;
 
-    const requestId = this.activeRequestId;
-    const text = this.activePasteText;
+    const { requestId, pasteId, text } = this.activeRequest;
     this.canceledRequestIds.add(requestId);
-    this.activeRequestId = null;
+    this.activeRequest = null;
 
     const request: CancelDetectionRequest = {
       type: 'CANCEL_DETECTION',
@@ -92,7 +119,7 @@ export class PasteInterceptor {
     sendRuntimeMessageBestEffort(request);
 
     this.callbacks.onCanceled(true);
-    void this.resolveExplicitCancellation(text);
+    void this.resolveExplicitCancellation(text, pasteId);
   }
 
   private handlePaste = (event: ClipboardEvent): void => {
@@ -142,20 +169,42 @@ export class PasteInterceptor {
       };
     }
 
-    this.activePastes.set(text, { targetElement: inputElement, savedSelection });
+    const pasteId = `paste_${++this.pasteCounter}_${Date.now()}`;
+    this.activePastes.set(pasteId, { targetElement: inputElement, savedSelection });
 
     // Block the default paste
     event.preventDefault();
     event.stopPropagation();
 
-    this.callbacks.onAnalyzing();
-    this.analyze(text);
+    void this.processPaste(text, pasteId);
   };
 
-  private async analyze(text: string): Promise<void> {
+  private async processPaste(text: string, pasteId: string): Promise<void> {
+    try {
+      await this.waitForReady();
+    } catch (error) {
+      this.callbacks.onError(getErrorMessage(error));
+      this.pasteOriginal(text, pasteId);
+      return;
+    }
+
+    // Settings can disable interception while the synchronous guard holds an
+    // initial page-load paste. Restore that paste once the preference is known.
+    if (!this.enabled) {
+      this.pasteOriginal(text, pasteId);
+      return;
+    }
+
+    this.callbacks.onAnalyzing();
+    await this.analyze(text, pasteId);
+  }
+
+  private async analyze(
+    text: string,
+    pasteId = `paste_${++this.pasteCounter}_${Date.now()}`,
+  ): Promise<void> {
     const requestId = `pg_${++this.requestCounter}_${Date.now()}`;
-    this.activeRequestId = requestId;
-    this.activePasteText = text;
+    this.activeRequest = { requestId, pasteId, text };
 
     try {
       const settings = await loadSettings();
@@ -172,14 +221,11 @@ export class PasteInterceptor {
         await chrome.runtime.sendMessage(request);
 
       if (this.canceledRequestIds.delete(requestId)) {
-        this.activeRequestId = null;
         return;
       }
 
       if (response?.type === 'DETECTION_CANCELED') {
-        this.activeRequestId = null;
-        this.activePasteText = null;
-        this.activePastes.delete(text);
+        this.activePastes.delete(pasteId);
         this.callbacks.onCanceled(false);
         return;
       }
@@ -187,20 +233,19 @@ export class PasteInterceptor {
       if (!response || response.type !== 'PII_RESULT') {
         this.callbacks.onError('Invalid response from detection pipeline');
         // Paste the original text on error so user isn't stuck
-        this.pasteOriginal(text);
+        this.pasteOriginal(text, pasteId);
         return;
       }
 
       const { spans, timings } = response.payload;
 
       if (spans.length === 0) {
-        this.callbacks.onNoPii(text);
+        this.callbacks.onNoPii(text, pasteId);
       } else {
-        this.callbacks.onPiiDetected(text, spans, timings);
+        this.callbacks.onPiiDetected(text, spans, pasteId, timings);
       }
     } catch (err) {
       if (this.canceledRequestIds.delete(requestId)) {
-        this.activeRequestId = null;
         return;
       }
 
@@ -208,44 +253,40 @@ export class PasteInterceptor {
 
       if (isExtensionReloadError(errorMessage)) {
         console.warn('[PG:content] Extension reloaded; refresh this page to reattach Privacy Guardrail.');
-        this.activePastes.delete(text);
+        this.activePastes.delete(pasteId);
         this.callbacks.onError('Extension reloaded. Refresh this page and paste again.');
         return;
       }
 
       console.error('[PG:content] Detection error:', err);
       this.callbacks.onError(errorMessage);
-      this.pasteOriginal(text);
+      this.pasteOriginal(text, pasteId);
     } finally {
-      if (this.activeRequestId === requestId) {
-        this.activeRequestId = null;
-        this.activePasteText = null;
+      if (this.activeRequest?.requestId === requestId) {
+        this.activeRequest = null;
       }
     }
   }
 
-  private async resolveExplicitCancellation(text: string | null): Promise<void> {
+  private async resolveExplicitCancellation(text: string, pasteId: string): Promise<void> {
     try {
-      if (text && this.callbacks.onExplicitCancelDecision) {
+      if (this.callbacks.onExplicitCancelDecision) {
         const decision = await this.callbacks.onExplicitCancelDecision(text);
         if (decision === 'paste-original') {
-          this.pasteOriginal(text);
+          this.pasteOriginal(text, pasteId);
           return;
         }
       }
     } catch (error) {
       console.error('[PG:content] Cancel decision failed:', error);
     } finally {
-      this.activePasteText = null;
-      if (text) {
-        this.activePastes.delete(text);
-      }
+      this.activePastes.delete(pasteId);
     }
   }
 
   /** Insert original text into input (fallback on error). */
-  pasteOriginal(text: string): void {
-    const state = this.activePastes.get(text);
+  pasteOriginal(text: string, pasteId?: string): void {
+    const state = pasteId ? this.activePastes.get(pasteId) : undefined;
     const input = state?.savedSelection?.inputElement || state?.targetElement || this.adapter.getInputElement();
     if (input) {
       if (state?.savedSelection) {
@@ -258,13 +299,12 @@ export class PasteInterceptor {
       }
       this.adapter.insertText(input, text);
     }
-    this.activePastes.delete(text);
+    if (pasteId) this.activePastes.delete(pasteId);
   }
 
   /** Insert anonymized text into input. */
-  pasteAnonymized(text: string, originalText?: string): void {
-    const key = originalText || text;
-    const state = this.activePastes.get(key);
+  pasteAnonymized(text: string, pasteId: string): void {
+    const state = this.activePastes.get(pasteId);
     const input = state?.savedSelection?.inputElement || state?.targetElement || this.adapter.getInputElement();
     if (input) {
       if (state?.savedSelection) {
@@ -277,6 +317,6 @@ export class PasteInterceptor {
       }
       this.adapter.insertText(input, text);
     }
-    this.activePastes.delete(key);
+    this.activePastes.delete(pasteId);
   }
 }

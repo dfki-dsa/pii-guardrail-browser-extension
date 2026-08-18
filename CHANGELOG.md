@@ -4,9 +4,16 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
-## [0.3.3] - Public Beta
+## Unreleased
 
-- Fixed copy/paste interception for overlapping updates
+- Added support for Copilot, Mistral, Perplexity, Poe, HuggingChat, DeepL, and LanguageTool.
+- Fixed paste destination tracking for overlapping review flows.
+
+## [0.4.0] - Public Beta
+
+- Fixed ChatGPT paste interception so the local review flow blocks the native paste before the user approves it.
+- Reduced the shipped Local AI package size by deduplicating WASM assets, pruning the tokenizer vocabulary, and quantizing embedding weights to int8.
+- Added reproducible tooling and documentation for preparing the optimized BardsAI model assets.
 
 ## [0.3.2] - Public Beta
 
