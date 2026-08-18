@@ -53,7 +53,7 @@ describe('PasteInterceptor', () => {
 
     expect(paste.defaultPrevented).toBe(true);
     expect(chatGptCaptureListener).not.toHaveBeenCalled();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
 
     interceptor.stop();
@@ -91,7 +91,7 @@ describe('PasteInterceptor', () => {
     expect(callbacks.onAnalyzing).not.toHaveBeenCalled();
 
     finishInitialization();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
 
     interceptor.stop();
@@ -194,7 +194,10 @@ describe('PasteInterceptor', () => {
     await interceptor.analyze('secret text');
 
     expect(callbacks.onError).toHaveBeenCalledWith('Unexpected detection failure');
-    expect(interceptor.pasteOriginal).toHaveBeenCalledWith('secret text');
+    expect(interceptor.pasteOriginal).toHaveBeenCalledWith(
+      'secret text',
+      expect.stringMatching(/^paste_/),
+    );
     expect(errorSpy).toHaveBeenCalled();
 
     errorSpy.mockRestore();
@@ -233,6 +236,122 @@ describe('PasteInterceptor', () => {
     void detection;
   });
 
+  it('serializes overlapping analyses so cancellation stays with the displayed request', async () => {
+    const callbacks = makeCallbacks();
+    const interceptor = new PasteInterceptor(adapter, callbacks) as any;
+    let resolveFirstDetection: (value: unknown) => void = () => undefined;
+
+    interceptor.activePastes.set('paste-1', { targetElement: null, savedSelection: null });
+    interceptor.activePastes.set('paste-2', { targetElement: null, savedSelection: null });
+
+    (chrome.runtime.sendMessage as jest.Mock).mockImplementation((message) => {
+      if (message.type === 'CANCEL_DETECTION') {
+        return Promise.resolve({
+          type: 'DETECTION_CANCELED',
+          payload: { requestId: message.payload.requestId },
+        });
+      }
+
+      const detectionCalls = (chrome.runtime.sendMessage as jest.Mock).mock.calls
+        .map(([request]) => request)
+        .filter((request) => request.type === 'DETECT_PII');
+      if (detectionCalls.length === 1) {
+        return new Promise((resolve) => {
+          resolveFirstDetection = resolve;
+        });
+      }
+
+      return Promise.resolve({
+        type: 'PII_RESULT',
+        payload: { requestId: message.payload.requestId, spans: [] },
+      });
+    });
+
+    const first = interceptor.processPaste('first private text', 'paste-1');
+    const second = interceptor.processPaste('second private text', 'paste-2');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const firstRequest = (chrome.runtime.sendMessage as jest.Mock).mock.calls
+      .map(([request]) => request)
+      .find((request) => request.type === 'DETECT_PII');
+    expect(firstRequest).toBeDefined();
+    expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
+
+    interceptor.cancelActiveDetection();
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'CANCEL_DETECTION',
+      payload: { requestId: firstRequest.payload.requestId },
+    });
+
+    resolveFirstDetection({
+      type: 'PII_RESULT',
+      payload: { requestId: firstRequest.payload.requestId, spans: [] },
+    });
+    await first;
+    await second;
+
+    const detectionRequests = (chrome.runtime.sendMessage as jest.Mock).mock.calls
+      .map(([request]) => request)
+      .filter((request) => request.type === 'DETECT_PII');
+    expect(detectionRequests).toHaveLength(2);
+    expect(detectionRequests[1].payload.requestId).not.toBe(firstRequest.payload.requestId);
+    expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the paste destination until an explicit cancellation decision completes', async () => {
+    const targetInput = { focus: jest.fn() } as unknown as HTMLElement;
+    const testAdapter: SiteAdapter = {
+      ...adapter,
+      insertText: jest.fn(),
+    };
+    const callbacks = makeCallbacks();
+    let resolveDecision: (decision: 'paste-original' | 'drop') => void = () => undefined;
+    callbacks.onExplicitCancelDecision = jest.fn().mockImplementation(
+      () => new Promise((resolve) => {
+        resolveDecision = resolve;
+      }),
+    );
+    const interceptor = new PasteInterceptor(testAdapter, callbacks) as any;
+    let resolveDetection: (value: unknown) => void = () => undefined;
+
+    interceptor.activePastes.set('paste-1', {
+      targetElement: targetInput,
+      savedSelection: null,
+    });
+    (chrome.runtime.sendMessage as jest.Mock).mockImplementation((message) => {
+      if (message.type === 'DETECT_PII') {
+        return new Promise((resolve) => {
+          resolveDetection = resolve;
+        });
+      }
+      return Promise.resolve({
+        type: 'DETECTION_CANCELED',
+        payload: { requestId: message.payload.requestId },
+      });
+    });
+
+    const analysis = interceptor.analyze('private text', 'paste-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const requestId = interceptor.activeRequest.requestId;
+
+    interceptor.cancelActiveDetection();
+    resolveDetection({
+      type: 'DETECTION_CANCELED',
+      payload: { requestId },
+    });
+    await analysis;
+
+    expect(interceptor.activePastes.has('paste-1')).toBe(true);
+    expect(testAdapter.insertText).not.toHaveBeenCalled();
+
+    resolveDecision('paste-original');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(testAdapter.insertText).toHaveBeenCalledWith(targetInput, 'private text');
+    expect(interceptor.activePastes.has('paste-1')).toBe(false);
+  });
+
   it('pastes original text when explicit cancellation decision chooses paste without checking', async () => {
     const callbacks = makeCallbacks();
     callbacks.onExplicitCancelDecision = jest.fn().mockResolvedValue('paste-original');
@@ -251,7 +370,10 @@ describe('PasteInterceptor', () => {
     await Promise.resolve();
 
     expect(callbacks.onExplicitCancelDecision).toHaveBeenCalledWith('secret text');
-    expect(interceptor.pasteOriginal).toHaveBeenCalledWith('secret text');
+    expect(interceptor.pasteOriginal).toHaveBeenCalledWith(
+      'secret text',
+      expect.stringMatching(/^paste_/),
+    );
     void detection;
   });
 
@@ -300,5 +422,61 @@ describe('PasteInterceptor', () => {
 
     expect(callbacks.onPiiDetected).not.toHaveBeenCalled();
     expect(callbacks.onNoPii).not.toHaveBeenCalled();
+  });
+
+  it('restores paste into the specific target editable element rather than default adapter input', () => {
+    const defaultInput = { focus: jest.fn() } as unknown as HTMLElement;
+    const specificTargetInput = { focus: jest.fn() } as unknown as HTMLElement;
+
+    const testAdapter: SiteAdapter = {
+      name: 'test',
+      getInputElement: () => defaultInput,
+      getResponseElements: () => [],
+      insertText: jest.fn(),
+      observeResponses: jest.fn() as unknown as SiteAdapter['observeResponses'],
+    };
+
+    const callbacks = makeCallbacks();
+    const interceptor = new PasteInterceptor(testAdapter, callbacks);
+
+    (interceptor as any).activePastes.set('paste-1', { targetElement: specificTargetInput, savedSelection: null });
+    interceptor.pasteOriginal('restored text', 'paste-1');
+
+    expect(testAdapter.insertText).toHaveBeenCalledWith(specificTargetInput, 'restored text');
+    expect(testAdapter.insertText).not.toHaveBeenCalledWith(defaultInput, 'restored text');
+  });
+
+  it('keeps destinations separate for concurrent pastes with identical text', () => {
+    const firstTarget = { focus: jest.fn() } as unknown as HTMLElement;
+    const secondTarget = { focus: jest.fn() } as unknown as HTMLElement;
+    const testAdapter: SiteAdapter = {
+      ...adapter,
+      insertText: jest.fn(),
+    };
+    const interceptor = new PasteInterceptor(testAdapter, makeCallbacks());
+
+    (interceptor as any).activePastes.set('paste-1', {
+      targetElement: firstTarget,
+      savedSelection: null,
+    });
+    (interceptor as any).activePastes.set('paste-2', {
+      targetElement: secondTarget,
+      savedSelection: null,
+    });
+
+    interceptor.pasteOriginal('identical private text', 'paste-2');
+    interceptor.pasteOriginal('identical private text', 'paste-1');
+
+    expect(testAdapter.insertText).toHaveBeenNthCalledWith(
+      1,
+      secondTarget,
+      'identical private text',
+    );
+    expect(testAdapter.insertText).toHaveBeenNthCalledWith(
+      2,
+      firstTarget,
+      'identical private text',
+    );
+    expect((interceptor as any).activePastes.size).toBe(0);
   });
 });

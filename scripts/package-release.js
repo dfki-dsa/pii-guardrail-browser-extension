@@ -66,7 +66,7 @@ function runStep(label, command, args, options = {}) {
     cwd: options.cwd || process.cwd(),
     env: { ...process.env, ...(options.env || {}) },
     stdio: 'inherit',
-    shell: false,
+    shell: process.platform === 'win32',
   });
 
   if (result.error) throw result.error;

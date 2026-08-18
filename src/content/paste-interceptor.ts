@@ -30,8 +30,13 @@ export type CanceledPasteDecision = 'paste-original' | 'drop';
 
 export interface PasteInterceptorCallbacks {
   onAnalyzing: () => void;
-  onNoPii: (text: string) => void;
-  onPiiDetected: (text: string, spans: PiiSpan[], timings?: { totalMs: number }) => void;
+  onNoPii: (text: string, pasteId: string) => void;
+  onPiiDetected: (
+    text: string,
+    spans: PiiSpan[],
+    pasteId: string,
+    timings?: { totalMs: number },
+  ) => void;
   onError: (error: string) => void;
   onCanceled: (explicitUserCancel?: boolean) => void;
   onExplicitCancelDecision?: (text: string) => Promise<CanceledPasteDecision> | CanceledPasteDecision;
@@ -48,6 +53,17 @@ interface SavedSelection {
   inputElement: HTMLElement;
 }
 
+interface PendingPaste {
+  targetElement: HTMLElement | null;
+  savedSelection: SavedSelection | null;
+}
+
+interface ActiveRequest {
+  requestId: string;
+  pasteId: string;
+  text: string;
+}
+
 /**
  * Manages paste event interception on a monitored LLM chat page.
  */
@@ -55,11 +71,12 @@ export class PasteInterceptor {
   private adapter: SiteAdapter;
   private callbacks: PasteInterceptorCallbacks;
   private enabled = true;
+  private pasteCounter = 0;
   private requestCounter = 0;
-  private activeRequestId: string | null = null;
+  private activeRequest: ActiveRequest | null = null;
   private canceledRequestIds = new Set<string>();
-  private savedSelection: SavedSelection | null = null;
-  private activePasteText: string | null = null;
+  private activePastes = new Map<string, PendingPaste>();
+  private analysisQueue: Promise<void> = Promise.resolve();
   private waitForReady: () => Promise<void>;
 
   constructor(
@@ -90,12 +107,11 @@ export class PasteInterceptor {
   }
 
   cancelActiveDetection(): void {
-    if (!this.activeRequestId) return;
+    if (!this.activeRequest) return;
 
-    const requestId = this.activeRequestId;
-    const text = this.activePasteText;
+    const { requestId, pasteId, text } = this.activeRequest;
     this.canceledRequestIds.add(requestId);
-    this.activeRequestId = null;
+    this.activeRequest = null;
 
     const request: CancelDetectionRequest = {
       type: 'CANCEL_DETECTION',
@@ -104,64 +120,101 @@ export class PasteInterceptor {
     sendRuntimeMessageBestEffort(request);
 
     this.callbacks.onCanceled(true);
-    void this.resolveExplicitCancellation(text);
+    void this.resolveExplicitCancellation(text, pasteId);
   }
 
   private handlePaste = (event: ClipboardEvent): void => {
     if (!this.enabled) return;
 
-    const inputElement = this.adapter.getInputElement();
+    const path = event.composedPath();
+
+    // Dynamically locate the editable element target directly from the paste event's composed path
+    let inputElement: HTMLElement | null = null;
+    for (const target of path) {
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName.toUpperCase();
+        const isEditable =
+          tag === 'TEXTAREA' ||
+          tag === 'INPUT' ||
+          target.getAttribute('contenteditable') === 'true' ||
+          target.isContentEditable;
+        if (isEditable) {
+          inputElement = target;
+          break;
+        }
+      }
+    }
+
+    if (!inputElement) {
+      inputElement = this.adapter.getInputElement();
+    }
+
     if (!inputElement) return;
 
-    // Only intercept pastes into the chat input
-    const target = event.target as HTMLElement;
-    if (!inputElement.contains(target) && target !== inputElement) return;
+    console.log(
+      '[PG:content] PASTE EVENT DETECTED! Target:',
+      (event.target as any)?.tagName,
+      'Resolved inputElement:',
+      inputElement.tagName,
+    );
 
     const text = event.clipboardData?.getData('text/plain');
     if (!text || text.length < MIN_PASTE_LENGTH) return;
 
-    // Save the current cursor/selection before preventing default —
-    // this lets us insert at the right position after async detection.
-    this.savedSelection = null;
+    let savedSelection: SavedSelection | null = null;
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
-      this.savedSelection = {
+      savedSelection = {
         range: selection.getRangeAt(0).cloneRange(),
         inputElement,
       };
     }
 
+    const pasteId = `paste_${++this.pasteCounter}_${Date.now()}`;
+    this.activePastes.set(pasteId, { targetElement: inputElement, savedSelection });
+
     // Block the default paste
     event.preventDefault();
     event.stopPropagation();
 
-    void this.processPaste(text);
+    void this.processPaste(text, pasteId);
   };
 
-  private async processPaste(text: string): Promise<void> {
+  private async processPaste(text: string, pasteId: string): Promise<void> {
     try {
       await this.waitForReady();
     } catch (error) {
       this.callbacks.onError(getErrorMessage(error));
-      this.pasteOriginal(text);
+      this.pasteOriginal(text, pasteId);
       return;
     }
 
     // Settings can disable interception while the synchronous guard holds an
     // initial page-load paste. Restore that paste once the preference is known.
     if (!this.enabled) {
-      this.pasteOriginal(text);
+      this.pasteOriginal(text, pasteId);
       return;
     }
 
-    this.callbacks.onAnalyzing();
-    await this.analyze(text);
+    // The content script exposes one scanning indicator and one cancel action.
+    // Serialize detection while keeping each pending paste's destination
+    // separate, so a later paste cannot replace the active request's
+    // cancellation state or dismiss its progress UI.
+    const queuedAnalysis = this.analysisQueue.then(async () => {
+      if (!this.activePastes.has(pasteId)) return;
+      this.callbacks.onAnalyzing();
+      await this.analyze(text, pasteId);
+    });
+    this.analysisQueue = queuedAnalysis.catch(() => undefined);
+    await queuedAnalysis;
   }
 
-  private async analyze(text: string): Promise<void> {
+  private async analyze(
+    text: string,
+    pasteId = `paste_${++this.pasteCounter}_${Date.now()}`,
+  ): Promise<void> {
     const requestId = `pg_${++this.requestCounter}_${Date.now()}`;
-    this.activeRequestId = requestId;
-    this.activePasteText = text;
+    this.activeRequest = { requestId, pasteId, text };
 
     try {
       const settings = await loadSettings();
@@ -177,36 +230,35 @@ export class PasteInterceptor {
       const response: PiiResultResponse | DetectionCanceledResponse =
         await chrome.runtime.sendMessage(request);
 
-      if (this.canceledRequestIds.delete(requestId)) {
-        this.activeRequestId = null;
-        return;
-      }
+      const explicitlyCanceled = this.canceledRequestIds.delete(requestId);
 
       if (response?.type === 'DETECTION_CANCELED') {
-        this.activeRequestId = null;
-        this.activePasteText = null;
-        this.savedSelection = null;
+        // The explicit cancellation flow still needs the saved destination if
+        // the user chooses "paste original". Its decision handler owns cleanup.
+        if (explicitlyCanceled) return;
+        this.activePastes.delete(pasteId);
         this.callbacks.onCanceled(false);
         return;
       }
 
+      if (explicitlyCanceled) return;
+
       if (!response || response.type !== 'PII_RESULT') {
         this.callbacks.onError('Invalid response from detection pipeline');
         // Paste the original text on error so user isn't stuck
-        this.pasteOriginal(text);
+        this.pasteOriginal(text, pasteId);
         return;
       }
 
       const { spans, timings } = response.payload;
 
       if (spans.length === 0) {
-        this.callbacks.onNoPii(text);
+        this.callbacks.onNoPii(text, pasteId);
       } else {
-        this.callbacks.onPiiDetected(text, spans, timings);
+        this.callbacks.onPiiDetected(text, spans, pasteId, timings);
       }
     } catch (err) {
       if (this.canceledRequestIds.delete(requestId)) {
-        this.activeRequestId = null;
         return;
       }
 
@@ -214,67 +266,70 @@ export class PasteInterceptor {
 
       if (isExtensionReloadError(errorMessage)) {
         console.warn('[PG:content] Extension reloaded; refresh this page to reattach Privacy Guardrail.');
-        this.savedSelection = null;
+        this.activePastes.delete(pasteId);
         this.callbacks.onError('Extension reloaded. Refresh this page and paste again.');
         return;
       }
 
       console.error('[PG:content] Detection error:', err);
       this.callbacks.onError(errorMessage);
-      this.pasteOriginal(text);
+      this.pasteOriginal(text, pasteId);
     } finally {
-      if (this.activeRequestId === requestId) {
-        this.activeRequestId = null;
-        this.activePasteText = null;
+      if (this.activeRequest?.requestId === requestId) {
+        this.activeRequest = null;
       }
     }
   }
 
-  private async resolveExplicitCancellation(text: string | null): Promise<void> {
+  private async resolveExplicitCancellation(text: string, pasteId: string): Promise<void> {
     try {
-      if (text && this.callbacks.onExplicitCancelDecision) {
+      if (this.callbacks.onExplicitCancelDecision) {
         const decision = await this.callbacks.onExplicitCancelDecision(text);
         if (decision === 'paste-original') {
-          this.pasteOriginal(text);
+          this.pasteOriginal(text, pasteId);
           return;
         }
       }
     } catch (error) {
       console.error('[PG:content] Cancel decision failed:', error);
     } finally {
-      this.activePasteText = null;
-      this.savedSelection = null;
+      this.activePastes.delete(pasteId);
     }
-  }
-
-  /** Restore the saved cursor position so text inserts at the original caret. */
-  private restoreSelection(): void {
-    if (!this.savedSelection) return;
-    const { range, inputElement } = this.savedSelection;
-    inputElement.focus();
-    const selection = window.getSelection();
-    if (selection) {
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-    this.savedSelection = null;
   }
 
   /** Insert original text into input (fallback on error). */
-  pasteOriginal(text: string): void {
-    const input = this.adapter.getInputElement();
+  pasteOriginal(text: string, pasteId?: string): void {
+    const state = pasteId ? this.activePastes.get(pasteId) : undefined;
+    const input = state?.savedSelection?.inputElement || state?.targetElement || this.adapter.getInputElement();
     if (input) {
-      this.restoreSelection();
+      if (state?.savedSelection) {
+        input.focus();
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(state.savedSelection.range);
+        }
+      }
       this.adapter.insertText(input, text);
     }
+    if (pasteId) this.activePastes.delete(pasteId);
   }
 
   /** Insert anonymized text into input. */
-  pasteAnonymized(text: string): void {
-    const input = this.adapter.getInputElement();
+  pasteAnonymized(text: string, pasteId: string): void {
+    const state = this.activePastes.get(pasteId);
+    const input = state?.savedSelection?.inputElement || state?.targetElement || this.adapter.getInputElement();
     if (input) {
-      this.restoreSelection();
+      if (state?.savedSelection) {
+        input.focus();
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(state.savedSelection.range);
+        }
+      }
       this.adapter.insertText(input, text);
     }
+    this.activePastes.delete(pasteId);
   }
 }

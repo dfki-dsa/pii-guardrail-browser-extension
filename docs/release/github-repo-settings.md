@@ -32,6 +32,7 @@ Site compatibility reports are limited to the public beta scope:
 - ChatGPT at `chatgpt.com` and `chat.openai.com`.
 - Claude at `claude.ai`.
 - Gemini at `gemini.google.com`.
+- Microsoft Copilot at `copilot.com` and `copilot.microsoft.com`.
 
 ## Manual Labels
 

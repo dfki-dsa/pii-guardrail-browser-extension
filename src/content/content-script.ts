@@ -8,9 +8,17 @@
  */
 
 import type { SiteAdapter } from './site-adapters/adapter-interface';
+import './patch-trusted-types';
 import { ChatGptAdapter } from './site-adapters/chatgpt-adapter';
 import { ClaudeAdapter } from './site-adapters/claude-adapter';
 import { GeminiAdapter } from './site-adapters/gemini-adapter';
+import { CopilotAdapter } from './site-adapters/copilot-adapter';
+import { MistralAdapter } from './site-adapters/mistral-adapter';
+import { PoeAdapter } from './site-adapters/poe-adapter';
+import { PerplexityAdapter } from './site-adapters/perplexity-adapter';
+import { LanguageToolAdapter } from './site-adapters/languagetool-adapter';
+import { HuggingChatAdapter } from './site-adapters/huggingchat-adapter';
+import { DeepLAdapter } from './site-adapters/deepl-adapter';
 import { GenericAdapter } from './site-adapters/generic-adapter';
 import { PasteInterceptor } from './paste-interceptor';
 import { sendRuntimeMessageBestEffort } from './runtime-messaging';
@@ -73,6 +81,34 @@ function selectAdapter(): SiteAdapter {
   }
   if (host.includes('gemini.google.com')) {
     return new GeminiAdapter();
+  }
+  if (
+    host.includes('copilot.com') ||
+    host.includes('copilot.microsoft.com') ||
+    host.includes('cloud.microsoft') ||
+    host.includes('microsoft365.com') ||
+    host.includes('bing.com') ||
+    host.includes('copilot.fun')
+  ) {
+    return new CopilotAdapter();
+  }
+  if (host.includes('deepl.com')) {
+    return new DeepLAdapter();
+  }
+  if (host.includes('languagetool.org')) {
+    return new LanguageToolAdapter();
+  }
+  if (host.includes('poe.com')) {
+    return new PoeAdapter();
+  }
+  if (host.includes('chat.mistral.ai')) {
+    return new MistralAdapter();
+  }
+  if (host.includes('perplexity.ai')) {
+    return new PerplexityAdapter();
+  }
+  if (host.includes('huggingface.co')) {
+    return new HuggingChatAdapter();
   }
   return new GenericAdapter();
 }
@@ -288,6 +324,7 @@ function makePreviewResolverFactory(
 function showReviewOverlay(
   originalText: string,
   rawSpans: PiiSpan[],
+  pasteId: string,
   timings?: { totalMs: number },
 ): void {
   const spans = prepareReviewSpans(originalText, rawSpans, settings, adaptiveThresholds);
@@ -295,7 +332,7 @@ function showReviewOverlay(
   if (spans.length === 0) {
     // After filtering, nothing left — paste original
     showIndicator('\u2713 No actionable personal data found', NO_PII_INDICATOR_MS);
-    interceptor.pasteOriginal(originalText);
+    interceptor.pasteOriginal(originalText, pasteId);
     return;
   }
 
@@ -305,7 +342,7 @@ function showReviewOverlay(
     {
       onConfirm: (approvedSpans: PiiSpan[]) => {
         if (approvedSpans.length === 0) {
-          interceptor.pasteOriginal(originalText);
+          interceptor.pasteOriginal(originalText, pasteId);
           return;
         }
 
@@ -337,7 +374,7 @@ function showReviewOverlay(
           anonymizedText = result.text;
         }
 
-        interceptor.pasteAnonymized(anonymizedText);
+        interceptor.pasteAnonymized(anonymizedText, pasteId);
 
         // Persist conversation-scoped map (still used by the de-anon banner
         // for the current view, regardless of vault state).
@@ -354,13 +391,13 @@ function showReviewOverlay(
       },
 
       onPasteOriginal: () => {
-        interceptor.pasteOriginal(originalText);
+        interceptor.pasteOriginal(originalText, pasteId);
       },
 
       onCancel: () => {
         void chooseAfterExplicitScanCancel().then((decision) => {
           if (decision === 'paste-original') {
-            interceptor.pasteOriginal(originalText);
+            interceptor.pasteOriginal(originalText, pasteId);
           }
           if (settings.debug) {
             console.log(`[PG:content] Overlay cancelled, ${decision === 'paste-original' ? 'original pasted' : 'nothing pasted'}`);
@@ -459,17 +496,17 @@ const interceptor = new PasteInterceptor(adapter, {
     scanningIndicator.start();
   },
 
-  onNoPii: (text) => {
+  onNoPii: (text, pasteId) => {
     scanningIndicator?.stop();
     scanningIndicator = null;
     showIndicator('\u2713 No personal data found', NO_PII_INDICATOR_MS);
-    interceptor.pasteOriginal(text);
+    interceptor.pasteOriginal(text, pasteId);
   },
 
-  onPiiDetected: (text, spans, timings) => {
+  onPiiDetected: (text, spans, pasteId, timings) => {
     scanningIndicator?.stop();
     scanningIndicator = null;
-    showReviewOverlay(text, spans, timings);
+    showReviewOverlay(text, spans, pasteId, timings);
   },
 
   onError: (error) => {

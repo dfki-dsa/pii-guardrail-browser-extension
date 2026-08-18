@@ -21,7 +21,7 @@ For reproducible reports, include:
 - Chrome version
 - operating system
 - Privacy Guardrail version
-- supported site: `chatgpt.com`, `chat.openai.com`, `claude.ai`, or `gemini.google.com`
+- supported site: `chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`, `copilot.microsoft.com`, or `bing.com/chat`
 - whether Local AI was ready, unavailable, off, loading, or failed
 - whether the issue happened during paste review, placeholder insertion, or restoration
 - synthetic text that demonstrates the issue

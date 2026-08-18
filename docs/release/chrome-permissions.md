@@ -29,6 +29,8 @@ The first public beta is limited to Chrome desktop stable and these chat sites:
 - `https://chatgpt.com/*`
 - `https://claude.ai/*`
 - `https://gemini.google.com/*`
+- `https://copilot.com/*`
+- `https://copilot.microsoft.com/*`
 
 Content scripts and web-accessible resources must use the same host list. Do not add generic/custom site support or `<all_urls>` for the first public beta.
 

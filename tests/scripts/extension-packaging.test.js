@@ -149,12 +149,7 @@ describe('extension NER asset packaging', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, '../../manifest.json'), 'utf8')
     );
-    const monitoredHosts = [
-      'https://chat.openai.com/*',
-      'https://chatgpt.com/*',
-      'https://claude.ai/*',
-      'https://gemini.google.com/*',
-    ];
+    const monitoredHosts = manifest.host_permissions;
 
     expect(manifest.web_accessible_resources).toEqual(
       expect.arrayContaining([
@@ -169,12 +164,7 @@ describe('extension NER asset packaging', () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, '../../manifest.json'), 'utf8')
     );
-    const monitoredHosts = [
-      'https://chat.openai.com/*',
-      'https://chatgpt.com/*',
-      'https://claude.ai/*',
-      'https://gemini.google.com/*',
-    ];
+    const monitoredHosts = manifest.host_permissions;
     const isolatedScript = manifest.content_scripts.find((entry) =>
       entry.js.includes('content/content-script.js')
     );

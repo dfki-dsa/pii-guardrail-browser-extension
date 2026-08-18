@@ -6,6 +6,9 @@ The project follows public beta release notes for `0.x` versions.
 
 ## Unreleased
 
+- Added support for Copilot, Mistral, Perplexity, Poe, HuggingChat, DeepL, and LanguageTool.
+- Fixed paste destination tracking for overlapping review flows.
+
 ## [0.4.0] - Public Beta
 
 - Fixed ChatGPT paste interception so the local review flow blocks the native paste before the user approves it.

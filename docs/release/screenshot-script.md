@@ -6,7 +6,7 @@ This document defines the capture workflow, the redaction rules for real-site ca
 
 ## Capture Posture
 
-Screenshots for the first public beta are captured on the real supported sites (`chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`) using only synthetic prompts. This is the documented operator decision for the first beta. Strict redaction rules below apply so that no real account, profile, or chat content can leak through the surrounding UI.
+Screenshots for the first public beta are captured on the real supported sites (`chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`, `copilot.microsoft.com`) using only synthetic prompts. This is the documented operator decision for the first beta. Strict redaction rules below apply so that no real account, profile, or chat content can leak through the surrounding UI.
 
 The popup, options page, and supported-page status chip are captured against the supported sites or against a blank tab. They do not require a chat account.
 
@@ -74,7 +74,7 @@ Before any screenshot is used in the Chrome Web Store listing:
 - No other tab title, bookmark, or address-bar suggestion is visible.
 - No system tray, menu bar, or OS notification reveals identity, calendar, or workplace state.
 - The Local AI state shown matches the build state at capture time.
-- The screenshot does not imply generic or custom site support beyond `chatgpt.com`, `chat.openai.com`, `claude.ai`, and `gemini.google.com`.
+- The screenshot does not imply generic or custom site support beyond `chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`, `copilot.com`, and `copilot.microsoft.com`.
 - The screenshot does not imply guaranteed detection, prevention, regulatory compliance, or enterprise readiness.
 - The image dimensions and aspect ratio meet current Chrome Web Store requirements.
 - The release operator and a second reviewer both sign off on each frame.

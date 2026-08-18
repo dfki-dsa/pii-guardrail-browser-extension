@@ -10,6 +10,7 @@ Privacy Guardrail is distributed through the Chrome Web Store. Use the Web Store
   - `chat.openai.com`
   - `claude.ai`
   - `gemini.google.com`
+  - `copilot.com` and `copilot.microsoft.com`
 
 Other browsers and sites are outside the first public beta support scope.
 

@@ -17,7 +17,7 @@ This data can include original sensitive text because placeholder restoration ne
 
 ## Identity Vault
 
-The identity vault keeps consistent replacements across supported conversations and providers. For example, the same name can resolve to the same placeholder or synthetic value on `chatgpt.com`, `chat.openai.com`, `claude.ai`, and `gemini.google.com`.
+The identity vault keeps consistent replacements across supported conversations and providers. For example, the same name can resolve to the same placeholder or synthetic value on `chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`, and `copilot.microsoft.com`.
 
 Vault records are stored locally in the browser profile. They are not placed in Chrome sync storage by this project.
 

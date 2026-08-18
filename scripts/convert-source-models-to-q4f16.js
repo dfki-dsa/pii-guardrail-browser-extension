@@ -5,7 +5,17 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
-const DEFAULT_PYTHON = 'python3';
+function getDefaultPython() {
+  if (process.platform === 'win32' && fs.existsSync('./.venv/Scripts/python.exe')) {
+    return './.venv/Scripts/python.exe';
+  }
+  if (fs.existsSync('./.venv/bin/python')) {
+    return './.venv/bin/python';
+  }
+  return 'python3';
+}
+
+const DEFAULT_PYTHON = getDefaultPython();
 const DEFAULT_OUTPUT_ROOT = path.join('generated', 'models', 'ner');
 const DEFAULT_BITS = 4;
 const DEFAULT_BLOCK_SIZE = 32;

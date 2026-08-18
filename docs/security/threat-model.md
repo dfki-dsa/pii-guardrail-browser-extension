@@ -29,6 +29,7 @@ Content scripts run on the supported beta sites:
 - `chat.openai.com`
 - `claude.ai`
 - `gemini.google.com`
+- `copilot.com` and `copilot.microsoft.com`
 
 They should limit interaction to supported chat UI behavior needed for paste interception, review display, placeholder insertion, page status, and restoration where supported.
 

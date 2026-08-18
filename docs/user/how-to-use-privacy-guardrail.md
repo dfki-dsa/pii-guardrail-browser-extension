@@ -8,6 +8,7 @@ Supported beta sites:
 - `chat.openai.com`
 - `claude.ai`
 - `gemini.google.com`
+- `copilot.com` and `copilot.microsoft.com`
 
 ## Paste Review
 
