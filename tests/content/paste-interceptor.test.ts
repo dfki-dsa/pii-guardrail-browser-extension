@@ -53,7 +53,7 @@ describe('PasteInterceptor', () => {
 
     expect(paste.defaultPrevented).toBe(true);
     expect(chatGptCaptureListener).not.toHaveBeenCalled();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
 
     interceptor.stop();
@@ -91,7 +91,7 @@ describe('PasteInterceptor', () => {
     expect(callbacks.onAnalyzing).not.toHaveBeenCalled();
 
     finishInitialization();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
 
     interceptor.stop();
@@ -234,6 +234,69 @@ describe('PasteInterceptor', () => {
     expect(interceptor.pasteOriginal).not.toHaveBeenCalled();
 
     void detection;
+  });
+
+  it('serializes overlapping analyses so cancellation stays with the displayed request', async () => {
+    const callbacks = makeCallbacks();
+    const interceptor = new PasteInterceptor(adapter, callbacks) as any;
+    let resolveFirstDetection: (value: unknown) => void = () => undefined;
+
+    interceptor.activePastes.set('paste-1', { targetElement: null, savedSelection: null });
+    interceptor.activePastes.set('paste-2', { targetElement: null, savedSelection: null });
+
+    (chrome.runtime.sendMessage as jest.Mock).mockImplementation((message) => {
+      if (message.type === 'CANCEL_DETECTION') {
+        return Promise.resolve({
+          type: 'DETECTION_CANCELED',
+          payload: { requestId: message.payload.requestId },
+        });
+      }
+
+      const detectionCalls = (chrome.runtime.sendMessage as jest.Mock).mock.calls
+        .map(([request]) => request)
+        .filter((request) => request.type === 'DETECT_PII');
+      if (detectionCalls.length === 1) {
+        return new Promise((resolve) => {
+          resolveFirstDetection = resolve;
+        });
+      }
+
+      return Promise.resolve({
+        type: 'PII_RESULT',
+        payload: { requestId: message.payload.requestId, spans: [] },
+      });
+    });
+
+    const first = interceptor.processPaste('first private text', 'paste-1');
+    const second = interceptor.processPaste('second private text', 'paste-2');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const firstRequest = (chrome.runtime.sendMessage as jest.Mock).mock.calls
+      .map(([request]) => request)
+      .find((request) => request.type === 'DETECT_PII');
+    expect(firstRequest).toBeDefined();
+    expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
+
+    interceptor.cancelActiveDetection();
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'CANCEL_DETECTION',
+      payload: { requestId: firstRequest.payload.requestId },
+    });
+
+    resolveFirstDetection({
+      type: 'PII_RESULT',
+      payload: { requestId: firstRequest.payload.requestId, spans: [] },
+    });
+    await first;
+    await second;
+
+    const detectionRequests = (chrome.runtime.sendMessage as jest.Mock).mock.calls
+      .map(([request]) => request)
+      .filter((request) => request.type === 'DETECT_PII');
+    expect(detectionRequests).toHaveLength(2);
+    expect(detectionRequests[1].payload.requestId).not.toBe(firstRequest.payload.requestId);
+    expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(2);
   });
 
   it('pastes original text when explicit cancellation decision chooses paste without checking', async () => {

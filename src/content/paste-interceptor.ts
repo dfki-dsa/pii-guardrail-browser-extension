@@ -76,6 +76,7 @@ export class PasteInterceptor {
   private activeRequest: ActiveRequest | null = null;
   private canceledRequestIds = new Set<string>();
   private activePastes = new Map<string, PendingPaste>();
+  private analysisQueue: Promise<void> = Promise.resolve();
   private waitForReady: () => Promise<void>;
 
   constructor(
@@ -195,8 +196,17 @@ export class PasteInterceptor {
       return;
     }
 
-    this.callbacks.onAnalyzing();
-    await this.analyze(text, pasteId);
+    // The content script exposes one scanning indicator and one cancel action.
+    // Serialize detection while keeping each pending paste's destination
+    // separate, so a later paste cannot replace the active request's
+    // cancellation state or dismiss its progress UI.
+    const queuedAnalysis = this.analysisQueue.then(async () => {
+      if (!this.activePastes.has(pasteId)) return;
+      this.callbacks.onAnalyzing();
+      await this.analyze(text, pasteId);
+    });
+    this.analysisQueue = queuedAnalysis.catch(() => undefined);
+    await queuedAnalysis;
   }
 
   private async analyze(
