@@ -230,15 +230,18 @@ export class PasteInterceptor {
       const response: PiiResultResponse | DetectionCanceledResponse =
         await chrome.runtime.sendMessage(request);
 
-      if (this.canceledRequestIds.delete(requestId)) {
-        return;
-      }
+      const explicitlyCanceled = this.canceledRequestIds.delete(requestId);
 
       if (response?.type === 'DETECTION_CANCELED') {
+        // The explicit cancellation flow still needs the saved destination if
+        // the user chooses "paste original". Its decision handler owns cleanup.
+        if (explicitlyCanceled) return;
         this.activePastes.delete(pasteId);
         this.callbacks.onCanceled(false);
         return;
       }
+
+      if (explicitlyCanceled) return;
 
       if (!response || response.type !== 'PII_RESULT') {
         this.callbacks.onError('Invalid response from detection pipeline');

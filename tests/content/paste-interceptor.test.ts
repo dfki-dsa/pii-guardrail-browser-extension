@@ -299,6 +299,59 @@ describe('PasteInterceptor', () => {
     expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(2);
   });
 
+  it('retains the paste destination until an explicit cancellation decision completes', async () => {
+    const targetInput = { focus: jest.fn() } as unknown as HTMLElement;
+    const testAdapter: SiteAdapter = {
+      ...adapter,
+      insertText: jest.fn(),
+    };
+    const callbacks = makeCallbacks();
+    let resolveDecision: (decision: 'paste-original' | 'drop') => void = () => undefined;
+    callbacks.onExplicitCancelDecision = jest.fn().mockImplementation(
+      () => new Promise((resolve) => {
+        resolveDecision = resolve;
+      }),
+    );
+    const interceptor = new PasteInterceptor(testAdapter, callbacks) as any;
+    let resolveDetection: (value: unknown) => void = () => undefined;
+
+    interceptor.activePastes.set('paste-1', {
+      targetElement: targetInput,
+      savedSelection: null,
+    });
+    (chrome.runtime.sendMessage as jest.Mock).mockImplementation((message) => {
+      if (message.type === 'DETECT_PII') {
+        return new Promise((resolve) => {
+          resolveDetection = resolve;
+        });
+      }
+      return Promise.resolve({
+        type: 'DETECTION_CANCELED',
+        payload: { requestId: message.payload.requestId },
+      });
+    });
+
+    const analysis = interceptor.analyze('private text', 'paste-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const requestId = interceptor.activeRequest.requestId;
+
+    interceptor.cancelActiveDetection();
+    resolveDetection({
+      type: 'DETECTION_CANCELED',
+      payload: { requestId },
+    });
+    await analysis;
+
+    expect(interceptor.activePastes.has('paste-1')).toBe(true);
+    expect(testAdapter.insertText).not.toHaveBeenCalled();
+
+    resolveDecision('paste-original');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(testAdapter.insertText).toHaveBeenCalledWith(targetInput, 'private text');
+    expect(interceptor.activePastes.has('paste-1')).toBe(false);
+  });
+
   it('pastes original text when explicit cancellation decision chooses paste without checking', async () => {
     const callbacks = makeCallbacks();
     callbacks.onExplicitCancelDecision = jest.fn().mockResolvedValue('paste-original');
