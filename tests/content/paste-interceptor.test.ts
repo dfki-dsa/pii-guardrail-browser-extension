@@ -19,7 +19,17 @@ describe('PasteInterceptor', () => {
     onPiiDetected: jest.fn(),
     onError: jest.fn(),
     onCanceled: jest.fn(),
+    onComposerLookup: jest.fn(),
   });
+
+  /** A paste event carrying `text` as its clipboard payload. */
+  const pasteEvent = (text: string): ClipboardEvent => {
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', {
+      value: { getData: () => text },
+    });
+    return event;
+  };
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -300,5 +310,184 @@ describe('PasteInterceptor', () => {
 
     expect(callbacks.onPiiDetected).not.toHaveBeenCalled();
     expect(callbacks.onNoPii).not.toHaveBeenCalled();
+  });
+
+  describe('message box lookup reporting', () => {
+    const LONG_ENOUGH = 'Synthetic private text that should have been reviewed.';
+
+    it('reports the missing message box when a qualifying paste falls through', () => {
+      // The signed-out ChatGPT case (#32): a real composer the adapter does
+      // not recognize, so the paste reaches the page unreviewed.
+      const composer = document.createElement('textarea');
+      document.body.append(composer);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+      interceptor.start();
+
+      const paste = pasteEvent(LONG_ENOUGH);
+      composer.dispatchEvent(paste);
+
+      expect(callbacks.onComposerLookup).toHaveBeenCalledWith(false);
+      // The paste is still the page's to handle — the signal reports the
+      // fall-through, it does not swallow the user's text.
+      expect(paste.defaultPrevented).toBe(false);
+
+      interceptor.stop();
+    });
+
+    it('reports a fall-through from inside a contenteditable composer', () => {
+      const composer = document.createElement('div');
+      composer.setAttribute('contenteditable', 'true');
+      const paragraph = document.createElement('p');
+      composer.append(paragraph);
+      document.body.append(composer);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+      interceptor.start();
+
+      // Browsers dispatch at the deepest editable node, not at the host.
+      paragraph.dispatchEvent(pasteEvent(LONG_ENOUGH));
+
+      expect(callbacks.onComposerLookup).toHaveBeenCalledWith(false);
+
+      interceptor.stop();
+    });
+
+    it('stays quiet for a paste too short to have been reviewed', () => {
+      const composer = document.createElement('textarea');
+      document.body.append(composer);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+      interceptor.start();
+
+      composer.dispatchEvent(pasteEvent('short'));
+
+      expect(callbacks.onComposerLookup).not.toHaveBeenCalled();
+
+      interceptor.stop();
+    });
+
+    it('stays quiet for a paste into a single-line field that is no composer', () => {
+      // A search or settings field on a supported host. No site's message box
+      // is an <input>, so this says nothing about whether the adapter still
+      // matches — and a warning here would be a false alarm the user cannot
+      // clear.
+      const searchField = document.createElement('input');
+      searchField.type = 'text';
+      document.body.append(searchField);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+      interceptor.start();
+
+      searchField.dispatchEvent(pasteEvent(LONG_ENOUGH));
+
+      expect(callbacks.onComposerLookup).not.toHaveBeenCalled();
+
+      interceptor.stop();
+    });
+
+    it('stays quiet for a paste at a target that could not have accepted text', () => {
+      // Chrome delivers Ctrl+V here with nothing focused. It is not evidence
+      // that the adapter stopped matching, and it must not raise a warning.
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+      interceptor.start();
+
+      document.body.dispatchEvent(pasteEvent(LONG_ENOUGH));
+
+      expect(callbacks.onComposerLookup).not.toHaveBeenCalled();
+
+      interceptor.stop();
+    });
+
+    it('stays quiet while interception is disabled', () => {
+      const composer = document.createElement('textarea');
+      document.body.append(composer);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+      interceptor.setEnabled(false);
+      interceptor.start();
+
+      composer.dispatchEvent(pasteEvent(LONG_ENOUGH));
+
+      expect(callbacks.onComposerLookup).not.toHaveBeenCalled();
+
+      interceptor.stop();
+    });
+
+    it('reports a resolved message box so a stale warning clears', () => {
+      const input = document.createElement('div');
+      input.setAttribute('contenteditable', 'true');
+      document.body.append(input);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(
+        { ...adapter, getInputElement: () => input },
+        callbacks,
+      );
+      interceptor.start();
+
+      input.dispatchEvent(pasteEvent(LONG_ENOUGH));
+
+      expect(callbacks.onComposerLookup).toHaveBeenCalledWith(true);
+      expect(callbacks.onComposerLookup).not.toHaveBeenCalledWith(false);
+
+      interceptor.stop();
+    });
+
+    it('reports a lookup that succeeds for a paste aimed elsewhere on the page', () => {
+      // A paste into a search field proves the adapter still matches, even
+      // though this paste is none of the interceptor's business.
+      const input = document.createElement('div');
+      input.setAttribute('contenteditable', 'true');
+      const elsewhere = document.createElement('input');
+      document.body.append(input, elsewhere);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(
+        { ...adapter, getInputElement: () => input },
+        callbacks,
+      );
+      interceptor.start();
+
+      const paste = pasteEvent(LONG_ENOUGH);
+      elsewhere.dispatchEvent(paste);
+
+      expect(callbacks.onComposerLookup).toHaveBeenCalledWith(true);
+      expect(paste.defaultPrevented).toBe(false);
+
+      interceptor.stop();
+    });
+
+    it('reports the missing message box when reviewed text has nowhere to land', () => {
+      // The composer went away between the paste and the insert: review ran,
+      // and its result would otherwise vanish without a word.
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+
+      interceptor.pasteAnonymized('Redacted [PERSON_1] text.');
+
+      expect(callbacks.onComposerLookup).toHaveBeenCalledWith(false);
+      expect(adapter.insertText).not.toHaveBeenCalled();
+    });
+
+    it('inserts and reports success when the message box is still there', () => {
+      const input = document.createElement('div');
+      input.setAttribute('contenteditable', 'true');
+      document.body.append(input);
+      const callbacks = makeCallbacks();
+      const insertingAdapter: SiteAdapter = {
+        ...adapter,
+        getInputElement: () => input,
+        insertText: jest.fn(),
+      };
+      const interceptor = new PasteInterceptor(insertingAdapter, callbacks);
+
+      interceptor.pasteAnonymized('Redacted [PERSON_1] text.');
+
+      expect(callbacks.onComposerLookup).toHaveBeenCalledWith(true);
+      expect(insertingAdapter.insertText).toHaveBeenCalledWith(
+        input,
+        'Redacted [PERSON_1] text.',
+      );
+    });
   });
 });

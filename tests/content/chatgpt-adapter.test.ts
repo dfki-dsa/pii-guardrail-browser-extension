@@ -3,6 +3,8 @@
 import { ChatGptAdapter } from '../../src/content/site-adapters/chatgpt-adapter';
 import { PasteInterceptor, type PasteInterceptorCallbacks } from '../../src/content/paste-interceptor';
 import { DEFAULT_SETTINGS } from '../../src/shared/constants';
+import { deriveChipReason } from '../../src/shared/page-status-chip-reason';
+import type { SystemCompatibilityStatus } from '../../src/shared/message-types';
 
 const PASTE_TEXT = 'Synthetic private text that needs a review before it can be pasted.';
 
@@ -126,7 +128,23 @@ describe('PasteInterceptor on the current ChatGPT client', () => {
     onPiiDetected: jest.fn(),
     onError: jest.fn(),
     onCanceled: jest.fn(),
+    onComposerLookup: jest.fn(),
   });
+
+  /** A system with nothing wrong with it, so only the page can be at fault. */
+  const healthySystem: SystemCompatibilityStatus = {
+    schemaVersion: 1,
+    policyVersion: 2,
+    checkedAt: 1,
+    browserMemoryGb: 16,
+    webGpu: 'available',
+    tier: 'ok',
+    recommendation: 'none',
+    notes: [],
+    localAiState: 'enabled',
+    runtimeState: 'ready',
+    criticalModal: 'none',
+  };
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -151,6 +169,44 @@ describe('PasteInterceptor on the current ChatGPT client', () => {
     expect(paste.defaultPrevented).toBe(true);
     await Promise.resolve();
     expect(callbacks.onAnalyzing).toHaveBeenCalledTimes(1);
+
+    interceptor.stop();
+  });
+
+  it('reports a page whose composer no adapter selector matches', () => {
+    // The pre-#32 world in miniature: a real message box wearing markup this
+    // adapter knows nothing about. The paste goes through unreviewed either
+    // way — what must not happen again is that it goes through unnoticed.
+    document.body.innerHTML = `
+      <main>
+        <div data-message-role="assistant">hi</div>
+        <form><textarea data-composer-shape-we-have-never-seen></textarea></form>
+      </main>`;
+    const composer = document.querySelector('textarea') as HTMLTextAreaElement;
+    let composerMissing = false;
+    const callbacks = {
+      ...makeCallbacks(),
+      onComposerLookup: (found: boolean) => {
+        composerMissing = !found;
+      },
+    };
+    const interceptor = new PasteInterceptor(new ChatGptAdapter(), callbacks);
+    interceptor.start();
+
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { getData: () => PASTE_TEXT },
+    });
+    composer.dispatchEvent(paste);
+
+    expect(paste.defaultPrevented).toBe(false);
+    expect(callbacks.onAnalyzing).not.toHaveBeenCalled();
+    // Nothing about the system is degraded, so without this signal the page
+    // would carry no chip at all while offering no protection.
+    expect(deriveChipReason({ status: healthySystem })).toBeNull();
+    expect(deriveChipReason({ status: healthySystem, composerMissing })).toBe(
+      'composer-not-found',
+    );
 
     interceptor.stop();
   });

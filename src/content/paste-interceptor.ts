@@ -36,6 +36,20 @@ export interface PasteInterceptorCallbacks {
   onError: (error: string) => void;
   onCanceled: (explicitUserCancel?: boolean) => void;
   onExplicitCancelDecision?: (text: string) => Promise<CanceledPasteDecision> | CanceledPasteDecision;
+  /**
+   * Reports whether the site adapter still resolves the page's message box.
+   *
+   * `false` says protection just failed silently: either a paste this
+   * interceptor would have reviewed fell through unreviewed, or reviewed text
+   * had nowhere to be inserted. `true` says a lookup succeeded and clears
+   * that state — a supported site can stop matching for one route or one
+   * moment of a page's build and match again afterwards.
+   *
+   * Deliberately asymmetric: a successful lookup is proof on its own, while a
+   * failed one is only reported for a paste that mattered (see
+   * `reportUnattachedPaste`).
+   */
+  onComposerLookup?: (found: boolean) => void;
 }
 
 export interface PasteInterceptorOptions {
@@ -121,7 +135,11 @@ export class PasteInterceptor {
     if (!this.enabled) return;
 
     const inputElement = this.adapter.getInputElement();
-    if (!inputElement) return;
+    if (!inputElement) {
+      this.reportUnattachedPaste(event);
+      return;
+    }
+    this.callbacks.onComposerLookup?.(true);
 
     // Only intercept pastes into the chat input
     const target = event.target as HTMLElement;
@@ -157,6 +175,27 @@ export class PasteInterceptor {
 
     void this.processPaste(text);
   };
+
+  /**
+   * Report a paste that fell through because the adapter resolved no message
+   * box — the failure mode that made the signed-out ChatGPT build (#32)
+   * invisible: the page looked protected while every paste went unreviewed.
+   *
+   * Restricted to pastes this interceptor would otherwise have taken: a
+   * target that could plausibly have been the message box, and enough text to
+   * clear `MIN_PASTE_LENGTH`. With no composer resolved there is nothing to
+   * run the usual containment check against, and this drives a warning the
+   * user sees, so the target itself has to carry the judgement.
+   */
+  private reportUnattachedPaste(event: ClipboardEvent): void {
+    if (!this.callbacks.onComposerLookup) return;
+    if (!isPlausibleComposerTarget(event.target)) return;
+
+    const text = event.clipboardData?.getData('text/plain');
+    if (!text || text.length < MIN_PASTE_LENGTH) return;
+
+    this.callbacks.onComposerLookup(false);
+  }
 
   private async processPaste(text: string): Promise<void> {
     try {
@@ -294,19 +333,56 @@ export class PasteInterceptor {
 
   /** Insert original text into input (fallback on error). */
   pasteOriginal(text: string): void {
-    const input = this.adapter.getInputElement();
-    if (input) {
-      this.restoreSelection();
-      this.adapter.insertText(input, text);
-    }
+    this.insertIntoComposer(text);
   }
 
   /** Insert anonymized text into input. */
   pasteAnonymized(text: string): void {
-    const input = this.adapter.getInputElement();
-    if (input) {
-      this.restoreSelection();
-      this.adapter.insertText(input, text);
-    }
+    this.insertIntoComposer(text);
   }
+
+  /**
+   * Insert into the message box, reporting the lookup either way.
+   *
+   * A message box that disappears between the paste and this insert takes the
+   * user's text with it — the review ran, and its result lands nowhere. That
+   * used to be a bare `if (input)` with no else, which is the same silence
+   * this signal exists to end.
+   */
+  private insertIntoComposer(text: string): void {
+    const input = this.adapter.getInputElement();
+    if (!input) {
+      this.callbacks.onComposerLookup?.(false);
+      return;
+    }
+
+    this.callbacks.onComposerLookup?.(true);
+    this.restoreSelection();
+    this.adapter.insertText(input, text);
+  }
+}
+
+/**
+ * True when this paste target could have been the message box we failed to
+ * find — the precondition for reading a failed lookup as a real fall-through.
+ *
+ * Two things are excluded. A target that accepts no text at all: a stray
+ * Ctrl+V outside any field still reaches this listener, and says nothing
+ * about the adapter. And a single-line `<input>`: every composer on every
+ * supported site is a textarea or a contenteditable, so a paste into a search
+ * or settings field is not evidence that the site's message box moved.
+ *
+ * Duck-typed rather than `instanceof`-checked so it also holds for elements
+ * from another realm, matching `isTextFormControl`.
+ */
+function isPlausibleComposerTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  if (!element || typeof element.closest !== 'function') return false;
+  if (element.tagName === 'TEXTAREA') return true;
+  // `isContentEditable` is the direct answer — and the only one that holds
+  // for `contenteditable="plaintext-only"` or an inner node of an editable
+  // host — but it is not implemented everywhere the tests run, so the
+  // attribute lookup backs it up.
+  if (element.isContentEditable) return true;
+  return element.closest('[contenteditable=""],[contenteditable="true"]') !== null;
 }
