@@ -20,6 +20,14 @@ export class ResponseObserver {
   private callbacks: ResponseObserverCallbacks;
   private observer: MutationObserver | null = null;
   private debounceTimers = new Map<HTMLElement, number>();
+  /** Per-element observers, kept connected for the element's lifetime so
+   *  content that streams in after a pause is still noticed. Disconnected
+   *  together in `stop()`. */
+  private elementObservers: MutationObserver[] = [];
+  private watched = new WeakSet<HTMLElement>();
+  /** Text each element was last checked with, so a re-fire that carries no
+   *  new content skips the storage read behind `onResponseWithPlaceholders`. */
+  private lastCheckedText = new WeakMap<HTMLElement, string>();
 
   constructor(adapter: SiteAdapter, callbacks: ResponseObserverCallbacks) {
     this.adapter = adapter;
@@ -44,6 +52,16 @@ export class ResponseObserver {
       this.observer.disconnect();
       this.observer = null;
     }
+    for (const observer of this.elementObservers) {
+      observer.disconnect();
+    }
+    this.elementObservers = [];
+    // Drop the per-element bookkeeping along with the observers it describes.
+    // Keeping it would make a later `start()` treat elements whose observers
+    // were just disconnected as still watched, so they would never be
+    // re-observed.
+    this.watched = new WeakSet();
+    this.lastCheckedText = new WeakMap();
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }
@@ -55,32 +73,49 @@ export class ResponseObserver {
    * placeholders once the content stabilizes.
    */
   private watchElement(element: HTMLElement): void {
-    const innerObserver = new MutationObserver(() => {
-      // Debounce: reset timer on each mutation
-      const existing = this.debounceTimers.get(element);
-      if (existing) clearTimeout(existing);
+    if (this.watched.has(element)) return;
+    this.watched.add(element);
 
-      const timer = window.setTimeout(() => {
-        this.debounceTimers.delete(element);
-        innerObserver.disconnect();
-        this.checkForPlaceholders(element);
-      }, RESPONSE_DEBOUNCE_MS);
-
-      this.debounceTimers.set(element, timer);
-    });
+    const innerObserver = new MutationObserver(() => this.scheduleCheck(element));
 
     innerObserver.observe(element, {
       childList: true,
       subtree: true,
       characterData: true,
     });
+    // Deliberately never disconnected here. A reply can arrive in several
+    // bursts with pauses longer than the debounce window between them — a
+    // one-shot observer stops listening during the first pause and never
+    // sees the placeholders that stream in afterwards.
+    this.elementObservers.push(innerObserver);
 
-    // Also do an immediate check in case content is already complete
-    setTimeout(() => this.checkForPlaceholders(element), RESPONSE_DEBOUNCE_MS);
+    // Covers an element that is appended already complete and never mutates
+    // again. Shares the debounce timer, so a streaming element schedules once
+    // here and merely resets it on each mutation rather than double-firing.
+    this.scheduleCheck(element);
+  }
+
+  /** Debounced check: resets on every call, fires once content settles. */
+  private scheduleCheck(element: HTMLElement): void {
+    const existing = this.debounceTimers.get(element);
+    if (existing) clearTimeout(existing);
+
+    const timer = window.setTimeout(() => {
+      this.debounceTimers.delete(element);
+      this.checkForPlaceholders(element);
+    }, RESPONSE_DEBOUNCE_MS);
+
+    this.debounceTimers.set(element, timer);
   }
 
   private checkForPlaceholders(element: HTMLElement): void {
     const text = collectResponseText(element);
+    // The observer stays connected for the element's lifetime, so it also
+    // fires for mutations that carry no new content — including the reveal
+    // overlay this extension appends itself. Skip those: the banner attach
+    // is idempotent anyway, but the storage read behind it is not free.
+    if (this.lastCheckedText.get(element) === text) return;
+    this.lastCheckedText.set(element, text);
     // Permissive shape gate so the banner-attach path also fires for
     // responses where every placeholder was mangled (`PERSON 1`,
     // `person_1`, …). False positives are harmless: the banner re-checks

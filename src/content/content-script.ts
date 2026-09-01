@@ -34,6 +34,8 @@ import {
   saveSettings,
   loadEntityMap,
   saveEntityMap,
+  migrateEntityMap,
+  ownedEntries,
   logFeedback,
 } from '../shared/storage';
 import { findConflictingPattern } from '../shared/list-conflicts';
@@ -58,7 +60,7 @@ import {
 } from '../shared/feedback';
 import { prepareReviewSpans } from './review-spans';
 import { resolveThreshold } from '../shared/sensitivity-resolver';
-import { LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, CHIP_FADE_MS } from '../shared/constants';
+import { CONVERSATION_URL_POLL_MS, LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, CHIP_FADE_MS } from '../shared/constants';
 import type { PiiSpan, FeedbackEntry, Settings, AllowlistEntry, CancelDetectionBehavior, NerStatus, NerStatusResponse, SystemCompatibilityStatus, SystemCompatibilityStatusResponse } from '../shared/message-types';
 
 // --- Adapter selection ---
@@ -83,7 +85,37 @@ const adapter = selectAdapter();
 let entityMap = new EntityMap();
 let settings: Settings;
 let adaptiveThresholds: Record<string, number> = {};
-const conversationUrl = window.location.href.split('?')[0];
+/**
+ * Storage key for this conversation's placeholder mappings.
+ *
+ * Not a constant: chat sites create the conversation on the first send and
+ * rewrite the URL in place, and users switch conversations without a page
+ * load. `watchConversationUrl` keeps this current and moves or reloads the
+ * mappings to match.
+ */
+let conversationUrl = normalizeConversationUrl(window.location.href);
+
+/**
+ * Replacement tokens this page session has actually emitted into the page.
+ *
+ * The in-memory map is restored from storage on load, and on the "new chat"
+ * screen that key is shared with every other tab composing its own first
+ * message. Persisting the map wholesale would file those other sessions'
+ * originals under this conversation. Only what this session used is written
+ * back — see `ownedEntries`.
+ */
+const sessionPlaceholders = new Set<string>();
+
+/**
+ * Guards against overlapping conversation loads. A storage read started for
+ * one conversation can resolve after a later one's, and the loser must not
+ * install its map over the winner's.
+ */
+let conversationGeneration = 0;
+
+function normalizeConversationUrl(href: string): string {
+  return href.split('?')[0].split('#')[0];
+}
 let scanningIndicator: ScanningIndicator | null = null;
 let pageStatusChip: PageStatusChip | null = null;
 let lastSystemStatus: SystemCompatibilityStatus | null = null;
@@ -247,6 +279,76 @@ function showIndicator(text: string, durationMs: number): void {
   }, durationMs);
 }
 
+/**
+ * Keep `conversationUrl` in step with same-document navigation.
+ *
+ * Content scripts run in an isolated world, so patching `history.pushState`
+ * here would never observe the page's own calls. Polling the URL is the
+ * dependable option; `popstate` is added so back/forward registers at once.
+ */
+function watchConversationUrl(): void {
+  // An adapter that cannot tell a persisted conversation from a "new chat"
+  // screen makes every URL change uninterpretable: on an unrecognised site a
+  // route change need not mean the conversation changed, and adopting a
+  // different map on that guess would drop mappings the current page can
+  // still reveal. Those sites keep the documented fallback — the load-time
+  // URL for the lifetime of the page.
+  if (!adapter.hasConversationId) return;
+
+  const check = (): void => {
+    const next = normalizeConversationUrl(window.location.href);
+    if (next === conversationUrl) return;
+    const previous = conversationUrl;
+    conversationUrl = next;
+    void handleConversationChange(previous, next);
+  };
+
+  window.addEventListener('popstate', check);
+  window.setInterval(check, CONVERSATION_URL_POLL_MS);
+}
+
+async function handleConversationChange(previous: string, next: string): Promise<void> {
+  const generation = ++conversationGeneration;
+
+  const leftNewChatScreen = adapter.hasConversationId
+    ? !adapter.hasConversationId(previous) && adapter.hasConversationId(next)
+    : false;
+
+  if (leftNewChatScreen) {
+    // The site has just created the conversation and rewritten the URL.
+    // Move the mappings recorded while composing onto the URL the user will
+    // come back to, otherwise they are stranded under the "new chat" key.
+    // Still the same conversation, so the map stays as it is either way.
+    const owned = ownedEntries(entityMap.toStored(), sessionPlaceholders);
+    const count = Object.keys(owned).length;
+    if (count > 0) {
+      await migrateEntityMap(previous, next, owned);
+    }
+    if (settings?.debug) {
+      console.log(`[PG:content] Conversation created; ${count} mapping(s) moved to ${next}`);
+    }
+    return;
+  }
+
+  // A genuinely different conversation. Adopt its stored mappings rather
+  // than carrying the previous conversation's state into it.
+  const stored = await loadEntityMap(next);
+  if (generation !== conversationGeneration) {
+    // A further navigation started while this read was in flight and owns
+    // the map now. Installing this one would leave the wrong conversation's
+    // originals resolvable — and persist them under the current URL on the
+    // next paste.
+    return;
+  }
+  entityMap = new EntityMap(stored);
+  // Restored entries belong to that conversation's earlier sessions, not to
+  // this one, so this session has emitted nothing yet.
+  sessionPlaceholders.clear();
+  if (settings?.debug) {
+    console.log(`[PG:content] Switched conversation; ${entityMap.size} mapping(s) restored`);
+  }
+}
+
 function waitForDocumentBody(): Promise<void> {
   if (document.body) return Promise.resolve();
   return new Promise((resolve) => {
@@ -345,9 +447,22 @@ function showReviewOverlay(
 
         interceptor.pasteAnonymized(anonymizedText);
 
+        // Record what this session put into the page. The map may also hold
+        // entries restored from storage — on the shared "new chat" key those
+        // can belong to another tab's draft — and those are not ours to
+        // persist or migrate.
+        for (const [replacement] of entityMap.entries()) {
+          if (anonymizedText.includes(replacement)) {
+            sessionPlaceholders.add(replacement);
+          }
+        }
+
         // Persist conversation-scoped map (still used by the de-anon banner
         // for the current view, regardless of vault state).
-        saveEntityMap(conversationUrl, entityMap.toStored());
+        saveEntityMap(
+          conversationUrl,
+          ownedEntries(entityMap.toStored(), sessionPlaceholders),
+        );
 
         showIndicator(
           `\u{1F512} ${approvedSpans.length} item(s) replaced`,
@@ -659,6 +774,7 @@ async function init(): Promise<void> {
 
   // Start observation and clipboard restoration after the DOM is available.
   startSupportedPageActivityHeartbeat();
+  watchConversationUrl();
   responseObserver.start();
   clipboardInterceptor.setTheme(settings.theme);
   clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);
