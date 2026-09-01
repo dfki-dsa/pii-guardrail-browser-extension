@@ -1,6 +1,6 @@
 import type { Settings, FeedbackEntry, NerModelKey, NerProviderMode, NerWebGpuDtype, GroupName, AllowlistEntry, BlocklistEntry, CancelDetectionBehavior, LocalAiUnloadTimeoutMs } from './message-types';
 import { ENTITY_TYPES } from './message-types';
-import { DEFAULT_SETTINGS, LOCAL_AI_UNLOAD_TIMEOUT_CHOICES, NER_WEBGPU_DTYPE_CHOICES, runtimeNerModelKey } from './constants';
+import { DEFAULT_CURATED_URLS, DEFAULT_SETTINGS, LOCAL_AI_UNLOAD_TIMEOUT_CHOICES, NER_WEBGPU_DTYPE_CHOICES, runtimeNerModelKey } from './constants';
 import { GROUP_NAMES, GROUP_DEFAULT_ON } from './category-groups';
 
 const SETTINGS_KEY = 'pg_settings';
@@ -139,6 +139,22 @@ function normalizeSettings(raw: unknown): Settings {
   if (typeof settings.autoWarmLocalAiOnActiveSupportedPage !== 'boolean') {
     settings.autoWarmLocalAiOnActiveSupportedPage = DEFAULT_SETTINGS.autoWarmLocalAiOnActiveSupportedPage;
   }
+  // Union the stored list with the current defaults so a chat site added in a
+  // later release reaches users who already have settings. A stored array
+  // otherwise shadows the defaults for good: `isSupportedPageUrl` never
+  // matches the new host, so the toolbar icon stays inactive and Local AI
+  // warm-up is gated off there, while the content script — matched from the
+  // manifest rather than from settings — still runs.
+  //
+  // This only ever adds. Entries the defaults do not know about survive, so
+  // additions keep working if the list becomes user-editable (#19), but
+  // nothing is ever dropped: a default a user removed would come back, and a
+  // host retired from DEFAULT_CURATED_URLS stays curated for everyone who
+  // already has settings. Both cases need a record of which defaults a user
+  // has been offered, worth adding alongside the UI that edits the list.
+  settings.curatedUrls = Array.isArray(settings.curatedUrls)
+    ? [...new Set([...settings.curatedUrls, ...DEFAULT_CURATED_URLS])]
+    : [...DEFAULT_CURATED_URLS];
   return settings;
 }
 
