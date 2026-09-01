@@ -25,11 +25,116 @@ export interface SiteAdapter {
   observeResponses(callback: (element: HTMLElement) => void): MutationObserver;
 }
 
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', '']);
+
+/**
+ * True when the element is a form control whose caret lives on
+ * `selectionStart`/`selectionEnd` rather than in a DOM Range.
+ *
+ * Composers built on `<textarea>` (ChatGPT's current web client) must not be
+ * driven through `window.getSelection()`: a textarea's internal caret is not
+ * addressable as a Range, so adding one moves the selection outside the
+ * control and the insert lands in the wrong place — or nowhere.
+ *
+ * Uses `tagName` rather than `instanceof` so the check also holds for
+ * elements from another realm (e.g. inside an iframe).
+ */
+export function isTextFormControl(
+  element: HTMLElement | null,
+): element is HTMLTextAreaElement | HTMLInputElement {
+  if (!element) return false;
+  if (element.tagName === 'TEXTAREA') return true;
+  return (
+    element.tagName === 'INPUT' &&
+    TEXT_INPUT_TYPES.has((element as HTMLInputElement).type)
+  );
+}
+
+/**
+ * Run the `insertText` execCommand, reporting failure instead of throwing.
+ *
+ * execCommand is the only insertion path that both respects the caret and
+ * lets the site's own editor keep its state in sync, so it stays the first
+ * choice — but it is long deprecated and absent in some environments, so
+ * every caller must be able to fall back.
+ */
+function tryExecInsertText(text: string): boolean {
+  if (typeof document.execCommand !== 'function') return false;
+  try {
+    return document.execCommand('insertText', false, text);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Assign through the prototype's native `value` setter so frameworks that
+ * cache the last value they wrote (React and friends) still observe the
+ * change and do not revert the field on their next render.
+ */
+function setFormControlValue(
+  element: HTMLTextAreaElement | HTMLInputElement,
+  value: string,
+): void {
+  const prototype =
+    element.tagName === 'TEXTAREA'
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+  if (descriptor?.set) {
+    descriptor.set.call(element, value);
+  } else {
+    element.value = value;
+  }
+}
+
+/** Insert text at the caret of a `<textarea>` / `<input>` composer. */
+function insertIntoFormControl(
+  element: HTMLTextAreaElement | HTMLInputElement,
+  text: string,
+): void {
+  element.focus();
+
+  // execCommand respects the control's current selection and keeps both the
+  // site's own input handling and the browser undo stack intact.
+  if (tryExecInsertText(text)) return;
+
+  // Fallback: splice the text in at the caret ourselves.
+  const start = element.selectionStart ?? element.value.length;
+  const end = element.selectionEnd ?? start;
+  setFormControlValue(
+    element,
+    element.value.slice(0, start) + text + element.value.slice(end),
+  );
+
+  const caret = start + text.length;
+  try {
+    element.setSelectionRange(caret, caret);
+  } catch {
+    // Input types such as `email` reject setSelectionRange; the value is
+    // already correct, only the caret position is lost.
+  }
+
+  element.dispatchEvent(
+    new InputEvent('input', {
+      inputType: 'insertText',
+      data: text,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
 /**
  * Insert text using execCommand (deprecated but most reliable for contentEditable).
  * Falls back to InputEvent dispatch if execCommand fails.
  */
 export function insertTextCompat(element: HTMLElement, text: string): void {
+  if (isTextFormControl(element)) {
+    insertIntoFormControl(element, text);
+    return;
+  }
+
   element.focus();
 
   // Preserve the current selection/cursor position so the pasted text
@@ -47,7 +152,7 @@ export function insertTextCompat(element: HTMLElement, text: string): void {
 
   // Try execCommand first (works with React/ProseMirror state sync).
   // insertText replaces the current selection (or inserts at caret if collapsed).
-  const success = document.execCommand('insertText', false, text);
+  const success = tryExecInsertText(text);
 
   if (!success) {
     // Fallback: dispatch InputEvent — insert at caret via Range API
