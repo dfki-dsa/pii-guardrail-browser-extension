@@ -141,8 +141,9 @@ copy button works.
 Reviewing what you paste is controlled by the master protection toggle. With master protection
 switched off, the extension no longer reviews what you paste, no longer inspects what you copy,
 and stores nothing further. The page-world observer described above remains installed on the
-supported sites, because it is part of the page scripts injected there, but nothing acts on what
-it reports and no clipboard text is inspected, stored, or sent anywhere.
+supported sites, because it is part of the page scripts injected there, but nothing in the
+extension acts on what it reports. What it reports travels only as a message within the page you
+are already on; the text is not inspected, not stored, and never leaves your browser.
 
 In every case, clipboard content is processed **locally in your browser**. As stated in §5, it is
 never transmitted to DFKI.
