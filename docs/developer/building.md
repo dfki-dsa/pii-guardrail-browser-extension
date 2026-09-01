@@ -107,7 +107,6 @@ This command does not download, prepare, or require large model assets. It runs 
 Optional checks:
 
 ```bash
-npm run lint
 npm run benchmark:openpii -- --regex-only
 ```
 
