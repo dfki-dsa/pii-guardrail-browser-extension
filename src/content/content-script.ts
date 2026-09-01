@@ -268,6 +268,14 @@ function showIndicator(text: string, durationMs: number): void {
  * dependable option; `popstate` is added so back/forward registers at once.
  */
 function watchConversationUrl(): void {
+  // An adapter that cannot tell a persisted conversation from a "new chat"
+  // screen makes every URL change uninterpretable: on an unrecognised site a
+  // route change need not mean the conversation changed, and adopting a
+  // different map on that guess would drop mappings the current page can
+  // still reveal. Those sites keep the documented fallback — the load-time
+  // URL for the lifetime of the page.
+  if (!adapter.hasConversationId) return;
+
   const check = (): void => {
     const next = normalizeConversationUrl(window.location.href);
     if (next === conversationUrl) return;
