@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS } from '../../src/shared/constants';
+import { DEFAULT_CURATED_URLS, DEFAULT_SETTINGS } from '../../src/shared/constants';
 import { loadSettings, saveSettings } from '../../src/shared/storage';
 
 describe('settings storage', () => {
@@ -187,6 +187,64 @@ describe('settings storage', () => {
         localAiUnloadTimeoutMs: null,
         keepLocalAiLoadedWhileActive: false,
         autoWarmLocalAiOnActiveSupportedPage: true,
+      }),
+    });
+  });
+
+  test('adds newly supported chat hosts to a curatedUrls list stored before they existed', async () => {
+    // Settings written by an older install, holding only the hosts that were
+    // curated back then. Without reconciling, the stored array shadows the
+    // defaults for good and a site added in a later release never activates
+    // the toolbar icon or Local AI warm-up for this user.
+    (chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
+      pg_settings: {
+        ...DEFAULT_SETTINGS,
+        curatedUrls: ['https://chat.openai.com', 'https://claude.ai'],
+      },
+    });
+
+    const settings = await loadSettings();
+
+    expect(settings.curatedUrls).toEqual(expect.arrayContaining([...DEFAULT_CURATED_URLS]));
+  });
+
+  test('keeps stored curated URLs the defaults do not know about, without duplicating defaults', async () => {
+    (chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
+      pg_settings: {
+        ...DEFAULT_SETTINGS,
+        curatedUrls: ['https://claude.ai', 'https://chat.example-corp.test'],
+      },
+    });
+
+    const settings = await loadSettings();
+
+    expect(settings.curatedUrls).toEqual(expect.arrayContaining([...DEFAULT_CURATED_URLS]));
+    expect(settings.curatedUrls).toContain('https://chat.example-corp.test');
+    expect(new Set(settings.curatedUrls).size).toBe(settings.curatedUrls.length);
+  });
+
+  test('falls back to the default curated URLs when the stored value is not an array', async () => {
+    (chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
+      pg_settings: { ...DEFAULT_SETTINGS, curatedUrls: 'https://claude.ai' },
+    });
+
+    const settings = await loadSettings();
+
+    expect(settings.curatedUrls).toEqual([...DEFAULT_CURATED_URLS]);
+    // A copy, so nothing downstream can mutate the shared default list.
+    expect(settings.curatedUrls).not.toBe(DEFAULT_CURATED_URLS);
+  });
+
+  test('writes the reconciled curated URL list back when settings are saved', async () => {
+    (chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
+      pg_settings: { ...DEFAULT_SETTINGS, curatedUrls: ['https://claude.ai'] },
+    });
+
+    await saveSettings({ enabled: true });
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      pg_settings: expect.objectContaining({
+        curatedUrls: expect.arrayContaining([...DEFAULT_CURATED_URLS]),
       }),
     });
   });
