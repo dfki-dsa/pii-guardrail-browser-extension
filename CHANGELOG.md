@@ -6,6 +6,9 @@ The project follows public beta release notes for `0.x` versions.
 
 ## Unreleased
 
+- Renamed the **Intercept clipboard** setting to **Intercept copy**. It only ever governed the offer to restore original values when you copy text out of a chat; it never affected the review of text you paste, which follows the master protection toggle. The old name suggested it covered both directions.
+- The privacy policy now has a Clipboard Access section spelling out when the extension reads or writes clipboard content, that it holds no clipboard permissions, and that it runs only on the supported chat sites.
+
 ## [0.4.1] - Public Beta
 
 - Reduced the packaged extension from about 408 MB to about 167 MB by shipping the optimized Local AI model. Version 0.4.0 added the tooling for this but still packaged the unoptimized model assets.

@@ -84,7 +84,7 @@
 
 	<article class="card">
 		<div class="head"><span>Behavior</span></div>
-		<div class="row"><div><div class="row-label">Intercept clipboard</div><div class="row-meta">Offer to restore copied replaced items</div></div><Toggle size="sm" checked={$clipboardInterceptEnabled} onchange={(checked) => setClipboardInterceptEnabled(checked)} label="Intercept clipboard" /></div>
+		<div class="row"><div><div class="row-label">Intercept copy</div><div class="row-meta">Offer to restore originals when you copy replaced text. Paste review follows the master protection toggle.</div></div><Toggle size="sm" checked={$clipboardInterceptEnabled} onchange={(checked) => setClipboardInterceptEnabled(checked)} label="Intercept copy" /></div>
 		<div class="divider"></div>
 		<div class="row"><div><div class="row-label">Debug mode</div><div class="row-meta">Verbose logging in console</div></div><Toggle size="sm" checked={$debug} onchange={(checked) => setDebug(checked)} label="Debug mode" /></div>
 	</article>
