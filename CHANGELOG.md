@@ -6,6 +6,8 @@ The project follows public beta release notes for `0.x` versions.
 
 ## Unreleased
 
+- Fixed Privacy Guardrail not recognizing the message box on ChatGPT when signed out, so no review was offered before pasting. That ChatGPT layout renders the message box as a plain text field instead of the rich editor the extension was built against. Both layouts are now recognized, and pasting keeps the cursor where you left it in either.
+- Fixed the de-anonymization banner not appearing on ChatGPT replies in that same layout.
 - Renamed the **Intercept clipboard** setting to **Intercept copy**. It only ever governed the offer to restore original values when you copy text out of a chat; it never affected the review of text you paste, which follows the master protection toggle. The old name suggested it covered both directions.
 - The privacy policy now has a Clipboard Access section spelling out when the extension reads or writes clipboard content, that it holds no clipboard permissions, and that it runs only on the supported chat sites.
 

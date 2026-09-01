@@ -1,4 +1,5 @@
 import type { SiteAdapter } from './site-adapters/adapter-interface';
+import { isTextFormControl } from './site-adapters/adapter-interface';
 import type {
   CancelDetectionRequest,
   DetectPiiRequest,
@@ -42,11 +43,20 @@ export interface PasteInterceptorOptions {
   waitForReady?: () => Promise<void>;
 }
 
-/** Saved cursor/selection state so we can restore it after async detection. */
-interface SavedSelection {
-  range: Range;
-  inputElement: HTMLElement;
-}
+/**
+ * Saved cursor/selection state so we can restore it after async detection.
+ * `<textarea>` composers (ChatGPT's current client) keep their caret on
+ * `selectionStart`/`selectionEnd`, which no DOM Range can describe, so the
+ * two cases are tracked separately.
+ */
+type SavedSelection =
+  | { kind: 'range'; range: Range; inputElement: HTMLElement }
+  | {
+      kind: 'formControl';
+      start: number;
+      end: number;
+      inputElement: HTMLTextAreaElement | HTMLInputElement;
+    };
 
 /**
  * Manages paste event interception on a monitored LLM chat page.
@@ -123,12 +133,22 @@ export class PasteInterceptor {
     // Save the current cursor/selection before preventing default —
     // this lets us insert at the right position after async detection.
     this.savedSelection = null;
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
+    if (isTextFormControl(inputElement)) {
       this.savedSelection = {
-        range: selection.getRangeAt(0).cloneRange(),
+        kind: 'formControl',
+        start: inputElement.selectionStart ?? inputElement.value.length,
+        end: inputElement.selectionEnd ?? inputElement.value.length,
         inputElement,
       };
+    } else {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        this.savedSelection = {
+          kind: 'range',
+          range: selection.getRangeAt(0).cloneRange(),
+          inputElement,
+        };
+      }
     }
 
     // Block the default paste
@@ -249,15 +269,27 @@ export class PasteInterceptor {
 
   /** Restore the saved cursor position so text inserts at the original caret. */
   private restoreSelection(): void {
-    if (!this.savedSelection) return;
-    const { range, inputElement } = this.savedSelection;
-    inputElement.focus();
+    const saved = this.savedSelection;
+    if (!saved) return;
+    this.savedSelection = null;
+
+    saved.inputElement.focus();
+
+    if (saved.kind === 'formControl') {
+      try {
+        saved.inputElement.setSelectionRange(saved.start, saved.end);
+      } catch {
+        // Input types such as `email` reject setSelectionRange; the insert
+        // still lands, just at the caret the browser chose on focus.
+      }
+      return;
+    }
+
     const selection = window.getSelection();
     if (selection) {
       selection.removeAllRanges();
-      selection.addRange(range);
+      selection.addRange(saved.range);
     }
-    this.savedSelection = null;
   }
 
   /** Insert original text into input (fallback on error). */
