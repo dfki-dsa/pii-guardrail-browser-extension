@@ -56,6 +56,12 @@ export class ResponseObserver {
       observer.disconnect();
     }
     this.elementObservers = [];
+    // Drop the per-element bookkeeping along with the observers it describes.
+    // Keeping it would make a later `start()` treat elements whose observers
+    // were just disconnected as still watched, so they would never be
+    // re-observed.
+    this.watched = new WeakSet();
+    this.lastCheckedText = new WeakMap();
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }

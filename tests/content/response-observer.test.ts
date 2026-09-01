@@ -114,6 +114,31 @@ describe('ResponseObserver streaming behaviour', () => {
     expect(onResponseWithPlaceholders).toHaveBeenCalledTimes(1);
   });
 
+  it('watches an element again after a stop()/start() cycle', async () => {
+    const onResponseWithPlaceholders = jest.fn();
+    observer = new ResponseObserver(makeAdapter(), { onResponseWithPlaceholders });
+    observer.start();
+
+    const el = appendResponse();
+    await wait(20);
+
+    // stop() disconnects the element's observer, so the bookkeeping that
+    // records it as watched has to go with it — otherwise the element is
+    // never re-observed and its reply stays unrevealable.
+    observer.stop();
+    observer.start();
+
+    // The restarted observer needs a fresh mutation to notice the element
+    // again, exactly as it would on a live page.
+    document.body.append(document.createElement('span'));
+    await wait(20);
+
+    el.textContent = 'Reply after restart mentioning [PERSON_1]';
+    await wait(SETTLE);
+
+    expect(onResponseWithPlaceholders).toHaveBeenCalledTimes(1);
+  });
+
   it('stops watching elements after stop()', async () => {
     const onResponseWithPlaceholders = jest.fn();
     observer = new ResponseObserver(makeAdapter(), { onResponseWithPlaceholders });
