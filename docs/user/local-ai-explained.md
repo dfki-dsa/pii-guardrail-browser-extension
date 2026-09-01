@@ -15,12 +15,7 @@ Local AI may use WebGPU when Chrome and the device support it. If WebGPU is unav
 
 ## Model Precision
 
-The model picker in the popup and options page offers two builds of the detection model:
-
-- **q4f16 (default):** a compact 4-bit model that keeps Local AI around 1 GB of RAM while loaded. This is also the CPU/WASM fallback model.
-- **fp16:** the full-precision WebGPU model. It uses slightly more RAM and roughly twice the GPU memory for slightly better detection of some structured values.
-
-The fp16 choice only applies on the GPU path; the CPU/WASM fallback uses q4f16. Switching the precision reloads Local AI immediately so the change takes effect right away.
+The detection model ships as a single compact 4-bit (q4f16) build that keeps Local AI around 1 GB of RAM while loaded. The same build is used on the WebGPU path and on the CPU/WASM fallback, so there is no precision choice to make.
 
 ## Loading And Unloading
 

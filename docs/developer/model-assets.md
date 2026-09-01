@@ -22,7 +22,7 @@ onnx/model_fp16.onnx
 onnx/model_fp16.onnx.data
 ```
 
-Both shipped transformer artifacts (`model_q4f16` and `model_fp16`) use ONNX external-data format: a small graph protobuf plus a `.onnx.data` weights sidecar. Embedded-weight protobufs force ONNX Runtime to copy all weights through the never-shrinking wasm heap during session init, which held multiple GB of RAM until the offscreen document closed. The q4f16 artifact is used for CPU/WASM fallback and as the default WebGPU model; the q8 `model_quantized.onnx` artifact is not packaged for the active release model.
+Both generated transformer artifacts (`model_q4f16` and `model_fp16`) use ONNX external-data format: a small graph protobuf plus a `.onnx.data` weights sidecar. Embedded-weight protobufs force ONNX Runtime to copy all weights through the never-shrinking wasm heap during session init, which held multiple GB of RAM until the offscreen document closed. Only `model_q4f16` is packaged with the extension: it serves both the WebGPU path and the CPU/WASM fallback, and it is the only WebGPU dtype the UI offers (`NER_WEBGPU_DTYPE_CHOICES`). `model_fp16` stays in the generated directory as the baseline the q4f16 artifact is quantized from; neither it nor the q8 `model_quantized.onnx` artifact is packaged (see `EXCLUDED_MODEL_ASSET_GLOBS` in `scripts/extension-packaging.js`).
 
 The generated directory is ignored by Git. Prepared model assets are release artifacts, not source files.
 
@@ -97,6 +97,7 @@ runtime model to the standard generated path.
 npm run prepare:model:bardsai -- \
   --source-dir .model-sources/bardsai-eu-pii-anonimization-multilang \
   --output-dir /private/tmp/bardsai-fp16-baseline \
+  --python .venv/bin/python \
   --force
 
 node scripts/convert-onnx-to-external-data.js \

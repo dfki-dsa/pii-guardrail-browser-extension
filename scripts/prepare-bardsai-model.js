@@ -23,6 +23,7 @@ Usage:
 Options:
   --source-dir <dir>   Directory containing exported model files.
   --output-dir <dir>   Generated runtime directory. Default: ${DEFAULT_OUTPUT_DIR}
+  --python <command>   Python command for ONNX fp16 conversion. Default: python3.
   --force              Remove an existing output directory before writing.
   --help               Show this help.
 `.trim();
@@ -56,6 +57,9 @@ function parseArgs(argv) {
       case '--output-dir':
       case '-o':
         options.outputDir = next();
+        break;
+      case '--python':
+        options.python = next();
         break;
       case '--force':
         options.force = true;
