@@ -30,6 +30,7 @@ describe('PageStatusChip', () => {
 
   test('renders distinct copy for each degraded reason', () => {
     const cases: [Parameters<PageStatusChip['update']>[0], RegExp][] = [
+      ['composer-not-found', /message box/i],
       ['low-memory-protection', /Low memory protection/i],
       ['enabled-despite-low-memory', /enabled despite low memory/i],
       ['model-failed', /failed to load/i],

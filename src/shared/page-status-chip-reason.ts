@@ -1,6 +1,7 @@
 import type { NerStatus, SystemCompatibilityStatus } from './message-types';
 
 export type ChipReason =
+  | 'composer-not-found'
   | 'low-memory-protection'
   | 'enabled-despite-low-memory'
   | 'pattern-only'
@@ -12,6 +13,12 @@ export type ChipReason =
 export interface ChipReasonInputs {
   status: SystemCompatibilityStatus | null | undefined;
   nerStatus?: NerStatus | null;
+  /**
+   * True once this page could not resolve the site's message box, so a paste
+   * that would have been reviewed went through unreviewed instead. Cleared
+   * again as soon as a lookup succeeds.
+   */
+  composerMissing?: boolean;
 }
 
 /**
@@ -20,7 +27,17 @@ export interface ChipReasonInputs {
  * `low-memory-protection` surface while it is still pending; suppressing
  * the chip in that window prevents duplicate contradictory messaging.
  */
-export function deriveChipReason({ status, nerStatus }: ChipReasonInputs): ChipReason | null {
+export function deriveChipReason({
+  status,
+  nerStatus,
+  composerMissing,
+}: ChipReasonInputs): ChipReason | null {
+  // Outranks every reason below, and is reported even when no system status
+  // has arrived. Those describe detection running in a reduced mode; this one
+  // means the extension is not attached to the page at all, so nothing was
+  // reviewed. A chip about memory tiers would be beside the point.
+  if (composerMissing) return 'composer-not-found';
+
   if (!status) return null;
 
   if (status.localAiState === 'off-load-failure') return 'model-failed';
@@ -69,6 +86,11 @@ export function chipReasonMessageForStatus(
 
 export function chipReasonMessage(reason: ChipReason): ChipMessage {
   switch (reason) {
+    case 'composer-not-found':
+      return {
+        title: 'Message box not recognized',
+        detail: 'Privacy Guardrail cannot find this page’s message box, so pastes here are not reviewed. Reload the page — if that does not help, the site has changed and the extension needs an update.',
+      };
     case 'pattern-only':
       return {
         title: 'Pattern detection only',

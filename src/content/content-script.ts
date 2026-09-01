@@ -120,6 +120,12 @@ let scanningIndicator: ScanningIndicator | null = null;
 let pageStatusChip: PageStatusChip | null = null;
 let lastSystemStatus: SystemCompatibilityStatus | null = null;
 let lastNerStatus: NerStatus | null = null;
+/**
+ * Whether the adapter has stopped resolving this page's message box. Set from
+ * the paste interceptor, which is the only place that finds out — and only at
+ * the moment it matters. See `reportComposerLookup`.
+ */
+let composerMissing = false;
 let activityListenersStarted = false;
 let lastActivityHeartbeatAt = 0;
 let releasePasteInterceptor: (() => void) | null = null;
@@ -205,8 +211,49 @@ async function maybeShowCriticalLocalAiModal(): Promise<void> {
  */
 function refreshPageStatusChip(): void {
   if (!pageStatusChip) return;
-  const reason = deriveChipReason({ status: lastSystemStatus, nerStatus: lastNerStatus });
+  const reason = deriveChipReason({
+    status: lastSystemStatus,
+    nerStatus: lastNerStatus,
+    composerMissing,
+  });
   pageStatusChip.update(reason, reason ? chipReasonMessageForStatus(reason, lastSystemStatus) : undefined);
+}
+
+/**
+ * Record whether the site adapter still resolves this page's message box.
+ *
+ * A site can change its DOM at any time, and the old failure mode was the
+ * worst one available to a privacy tool: initialization succeeded, the chip
+ * stayed green, and every paste went through unreviewed with nothing said.
+ * A failed lookup is reported on the spot and also left standing on the chip,
+ * because the moment passes but the state does not.
+ */
+function reportComposerLookup(found: boolean): void {
+  if (!found) {
+    // Unconditional, NOT behind `settings.debug`: reaching here means text
+    // reached the page without review, or reviewed text never landed. The
+    // page's own UI shows nothing either way.
+    console.warn(
+      '[PG:content] Could not find this page’s message box: pastes here are '
+        + 'not reviewed. This site may have changed.',
+    );
+
+    // The chip owns this surface: it appears on this same paste and says the
+    // same thing, and a centred indicator on top of it only covers the text
+    // it duplicates. Fall back to the indicator when there is no chip to
+    // speak through — a paste that beats `init()` to the chip, or an `init()`
+    // that failed before building one.
+    if (!pageStatusChip) {
+      showIndicator(
+        '⚠ Privacy Guardrail could not find this page’s message box',
+        INIT_FAILURE_INDICATOR_MS,
+      );
+    }
+  }
+
+  if (composerMissing === !found) return;
+  composerMissing = !found;
+  refreshPageStatusChip();
 }
 
 async function probeNerStatusIfSafe(): Promise<void> {
@@ -608,6 +655,8 @@ const interceptor = new PasteInterceptor(adapter, {
   },
 
   onExplicitCancelDecision: async () => chooseAfterExplicitScanCancel(),
+
+  onComposerLookup: reportComposerLookup,
 }, {
   waitForReady: () => pasteInterceptorReady,
 });

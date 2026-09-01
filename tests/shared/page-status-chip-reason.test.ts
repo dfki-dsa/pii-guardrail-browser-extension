@@ -33,6 +33,48 @@ describe('deriveChipReason', () => {
     expect(deriveChipReason({ status: status() })).toBeNull();
   });
 
+  test('returns composer-not-found on a healthy system whose message box was not resolved', () => {
+    expect(deriveChipReason({ status: status(), composerMissing: true })).toBe(
+      'composer-not-found',
+    );
+  });
+
+  test('reports composer-not-found even when no system status has arrived', () => {
+    // The background can be unreachable while the page is perfectly capable
+    // of swallowing an unreviewed paste; that must still surface.
+    expect(deriveChipReason({ status: null, composerMissing: true })).toBe(
+      'composer-not-found',
+    );
+  });
+
+  test('composer-not-found outranks every degraded Local AI reason', () => {
+    const degraded: SystemCompatibilityStatus[] = [
+      status({ localAiState: 'off-load-failure' }),
+      status({ localAiState: 'off-user-choice' }),
+      status({ tier: 'warning', browserMemoryGb: 4 }),
+      status({ tier: 'unknown', browserMemoryGb: undefined }),
+      status({
+        tier: 'critical',
+        browserMemoryGb: 2,
+        localAiState: 'off-low-memory-auto',
+        criticalModal: 'dismissed',
+      }),
+    ];
+
+    for (const degradedStatus of degraded) {
+      expect(deriveChipReason({ status: degradedStatus, composerMissing: true })).toBe(
+        'composer-not-found',
+      );
+    }
+  });
+
+  test('clearing composerMissing hands the chip back to the Local AI reasons', () => {
+    const offByChoice = status({ localAiState: 'off-user-choice' });
+    expect(deriveChipReason({ status: offByChoice, composerMissing: false })).toBe(
+      'pattern-only',
+    );
+  });
+
   test('returns model-failed for off-load-failure regardless of tier', () => {
     expect(
       deriveChipReason({
@@ -116,6 +158,7 @@ describe('deriveChipReason', () => {
 
 describe('chipReasonMessage', () => {
   const required: Record<ChipReason, RegExp> = {
+    'composer-not-found': /message box/i,
     'pattern-only': /pattern detection only/i,
     'low-memory-protection': /low memory protection/i,
     'enabled-despite-low-memory': /enabled despite low memory/i,
@@ -132,6 +175,12 @@ describe('chipReasonMessage', () => {
       expect(combined).toMatch(pattern);
     });
   }
+
+  test('composer-not-found says pastes go unreviewed and names a remedy', () => {
+    const message = chipReasonMessage('composer-not-found');
+    expect(message.detail).toMatch(/not reviewed/i);
+    expect(message.detail).toMatch(/reload/i);
+  });
 
   test('pattern-only details name what may be missed without Local AI', () => {
     const message = chipReasonMessage('pattern-only');
