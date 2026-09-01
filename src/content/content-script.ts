@@ -35,6 +35,7 @@ import {
   loadEntityMap,
   saveEntityMap,
   migrateEntityMap,
+  ownedEntries,
   logFeedback,
 } from '../shared/storage';
 import { findConflictingPattern } from '../shared/list-conflicts';
@@ -93,6 +94,24 @@ let adaptiveThresholds: Record<string, number> = {};
  * mappings to match.
  */
 let conversationUrl = normalizeConversationUrl(window.location.href);
+
+/**
+ * Replacement tokens this page session has actually emitted into the page.
+ *
+ * The in-memory map is restored from storage on load, and on the "new chat"
+ * screen that key is shared with every other tab composing its own first
+ * message. Persisting the map wholesale would file those other sessions'
+ * originals under this conversation. Only what this session used is written
+ * back — see `ownedEntries`.
+ */
+const sessionPlaceholders = new Set<string>();
+
+/**
+ * Guards against overlapping conversation loads. A storage read started for
+ * one conversation can resolve after a later one's, and the loser must not
+ * install its map over the winner's.
+ */
+let conversationGeneration = 0;
 
 function normalizeConversationUrl(href: string): string {
   return href.split('?')[0].split('#')[0];
@@ -289,24 +308,42 @@ function watchConversationUrl(): void {
 }
 
 async function handleConversationChange(previous: string, next: string): Promise<void> {
+  const generation = ++conversationGeneration;
+
   const leftNewChatScreen = adapter.hasConversationId
     ? !adapter.hasConversationId(previous) && adapter.hasConversationId(next)
     : false;
 
-  if (leftNewChatScreen && entityMap.size > 0) {
+  if (leftNewChatScreen) {
     // The site has just created the conversation and rewritten the URL.
     // Move the mappings recorded while composing onto the URL the user will
     // come back to, otherwise they are stranded under the "new chat" key.
-    await migrateEntityMap(previous, next, entityMap.toStored());
+    // Still the same conversation, so the map stays as it is either way.
+    const owned = ownedEntries(entityMap.toStored(), sessionPlaceholders);
+    const count = Object.keys(owned).length;
+    if (count > 0) {
+      await migrateEntityMap(previous, next, owned);
+    }
     if (settings?.debug) {
-      console.log(`[PG:content] Conversation created; ${entityMap.size} mapping(s) moved to ${next}`);
+      console.log(`[PG:content] Conversation created; ${count} mapping(s) moved to ${next}`);
     }
     return;
   }
 
   // A genuinely different conversation. Adopt its stored mappings rather
   // than carrying the previous conversation's state into it.
-  entityMap = new EntityMap(await loadEntityMap(next));
+  const stored = await loadEntityMap(next);
+  if (generation !== conversationGeneration) {
+    // A further navigation started while this read was in flight and owns
+    // the map now. Installing this one would leave the wrong conversation's
+    // originals resolvable — and persist them under the current URL on the
+    // next paste.
+    return;
+  }
+  entityMap = new EntityMap(stored);
+  // Restored entries belong to that conversation's earlier sessions, not to
+  // this one, so this session has emitted nothing yet.
+  sessionPlaceholders.clear();
   if (settings?.debug) {
     console.log(`[PG:content] Switched conversation; ${entityMap.size} mapping(s) restored`);
   }
@@ -410,9 +447,22 @@ function showReviewOverlay(
 
         interceptor.pasteAnonymized(anonymizedText);
 
+        // Record what this session put into the page. The map may also hold
+        // entries restored from storage — on the shared "new chat" key those
+        // can belong to another tab's draft — and those are not ours to
+        // persist or migrate.
+        for (const [replacement] of entityMap.entries()) {
+          if (anonymizedText.includes(replacement)) {
+            sessionPlaceholders.add(replacement);
+          }
+        }
+
         // Persist conversation-scoped map (still used by the de-anon banner
         // for the current view, regardless of vault state).
-        saveEntityMap(conversationUrl, entityMap.toStored());
+        saveEntityMap(
+          conversationUrl,
+          ownedEntries(entityMap.toStored(), sessionPlaceholders),
+        );
 
         showIndicator(
           `\u{1F512} ${approvedSpans.length} item(s) replaced`,

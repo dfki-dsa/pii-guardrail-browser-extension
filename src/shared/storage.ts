@@ -191,6 +191,29 @@ export async function loadEntityMap(
 }
 
 /**
+ * Narrow a map to the entries whose replacement token a single page session
+ * actually emitted into the page.
+ *
+ * The "new chat" URL is a shared key: every new conversation in every tab
+ * files its mappings under it until the site assigns a real one. A session
+ * restores that key on load, so its in-memory map can hold entries belonging
+ * to other sessions' drafts. Persisting or migrating the map wholesale would
+ * carry those originals into this conversation, where its reveal banner
+ * would resolve placeholders it never sent. Both writers pass their entries
+ * through here so a session only ever stores what it used.
+ */
+export function ownedEntries(
+  map: StoredEntityMap,
+  owned: ReadonlySet<string>,
+): StoredEntityMap {
+  const result: StoredEntityMap = {};
+  for (const [replacement, original] of Object.entries(map)) {
+    if (owned.has(replacement)) result[replacement] = original;
+  }
+  return result;
+}
+
+/**
  * Move placeholder mappings recorded before a conversation existed onto the
  * URL the site assigned it.
  *
