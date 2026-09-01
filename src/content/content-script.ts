@@ -208,6 +208,12 @@ async function refreshSystemStatusFromBackground(): Promise<void> {
   }
 }
 
+/**
+ * Longer than the routine indicators: this one reports that protection is
+ * off, so it must survive a glance away from the screen.
+ */
+const INIT_FAILURE_INDICATOR_MS = 8000;
+
 function showIndicator(text: string, durationMs: number): void {
   const existing = document.getElementById('pg-indicator');
   if (existing) existing.remove();
@@ -673,7 +679,24 @@ void init().catch((error) => {
   interceptor.setEnabled(false);
   releasePasteInterceptor?.();
   releasePasteInterceptor = null;
-  if (settings?.debug) {
-    console.error('[PG:content] Initialization failed:', error);
-  }
+
+  // Report unconditionally — NOT behind `settings.debug`. Reaching here means
+  // paste review is off for the rest of this page's lifetime: there is no
+  // retry, and neither recovery listener can help (`chrome.storage.onChanged`
+  // is registered further down `init` and so was never reached, and a
+  // `SETTINGS_UPDATED` message cannot arrive if the runtime context is what
+  // failed). A privacy tool that has stopped reviewing pastes must say so
+  // rather than let the user keep pasting while believing they are covered.
+  console.error(
+    '[PG:content] Initialization failed — paste review is OFF for this page. '
+      + 'Reload the page to retry.',
+    error,
+  );
+
+  void waitForDocumentBody().then(() => {
+    showIndicator(
+      '\u26A0 Privacy Guardrail is off for this page \u2014 reload to retry',
+      INIT_FAILURE_INDICATOR_MS,
+    );
+  });
 });
