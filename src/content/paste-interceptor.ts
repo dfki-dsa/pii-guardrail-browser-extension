@@ -181,15 +181,15 @@ export class PasteInterceptor {
    * box — the failure mode that made the signed-out ChatGPT build (#32)
    * invisible: the page looked protected while every paste went unreviewed.
    *
-   * Restricted to pastes this interceptor would otherwise have taken: an
-   * editable target, and enough text to clear `MIN_PASTE_LENGTH`. A stray
-   * Ctrl+V outside any editable field still reaches this listener and is not
-   * evidence that the adapter stopped matching — and this drives a warning
-   * the user sees.
+   * Restricted to pastes this interceptor would otherwise have taken: a
+   * target that could plausibly have been the message box, and enough text to
+   * clear `MIN_PASTE_LENGTH`. With no composer resolved there is nothing to
+   * run the usual containment check against, and this drives a warning the
+   * user sees, so the target itself has to carry the judgement.
    */
   private reportUnattachedPaste(event: ClipboardEvent): void {
     if (!this.callbacks.onComposerLookup) return;
-    if (!isEditableTarget(event.target)) return;
+    if (!isPlausibleComposerTarget(event.target)) return;
 
     const text = event.clipboardData?.getData('text/plain');
     if (!text || text.length < MIN_PASTE_LENGTH) return;
@@ -363,19 +363,26 @@ export class PasteInterceptor {
 }
 
 /**
- * True when text pasted at this target would have landed somewhere — the
- * precondition for treating a failed message-box lookup as a real fall-through
- * rather than a keystroke that was never going to insert anything.
+ * True when this paste target could have been the message box we failed to
+ * find — the precondition for reading a failed lookup as a real fall-through.
+ *
+ * Two things are excluded. A target that accepts no text at all: a stray
+ * Ctrl+V outside any field still reaches this listener, and says nothing
+ * about the adapter. And a single-line `<input>`: every composer on every
+ * supported site is a textarea or a contenteditable, so a paste into a search
+ * or settings field is not evidence that the site's message box moved.
  *
  * Duck-typed rather than `instanceof`-checked so it also holds for elements
  * from another realm, matching `isTextFormControl`.
  */
-function isEditableTarget(target: EventTarget | null): boolean {
+function isPlausibleComposerTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element || typeof element.closest !== 'function') return false;
-  if (isTextFormControl(element)) return true;
-  // `isContentEditable` is the direct answer but is not implemented
-  // everywhere the tests run, so the attribute lookup carries the check.
+  if (element.tagName === 'TEXTAREA') return true;
+  // `isContentEditable` is the direct answer — and the only one that holds
+  // for `contenteditable="plaintext-only"` or an inner node of an editable
+  // host — but it is not implemented everywhere the tests run, so the
+  // attribute lookup backs it up.
   if (element.isContentEditable) return true;
   return element.closest('[contenteditable=""],[contenteditable="true"]') !== null;
 }

@@ -367,6 +367,25 @@ describe('PasteInterceptor', () => {
       interceptor.stop();
     });
 
+    it('stays quiet for a paste into a single-line field that is no composer', () => {
+      // A search or settings field on a supported host. No site's message box
+      // is an <input>, so this says nothing about whether the adapter still
+      // matches — and a warning here would be a false alarm the user cannot
+      // clear.
+      const searchField = document.createElement('input');
+      searchField.type = 'text';
+      document.body.append(searchField);
+      const callbacks = makeCallbacks();
+      const interceptor = new PasteInterceptor(adapter, callbacks);
+      interceptor.start();
+
+      searchField.dispatchEvent(pasteEvent(LONG_ENOUGH));
+
+      expect(callbacks.onComposerLookup).not.toHaveBeenCalled();
+
+      interceptor.stop();
+    });
+
     it('stays quiet for a paste at a target that could not have accepted text', () => {
       // Chrome delivers Ctrl+V here with nothing focused. It is not evidence
       // that the adapter stopped matching, and it must not raise a warning.
