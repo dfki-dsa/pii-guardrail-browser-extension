@@ -118,11 +118,16 @@ perform yourself:
   supported site the extension inspects the copied text for placeholders it inserted earlier, so
   that it can offer to restore the original values. It takes that text from the copy event or
   from the current page selection. To catch copies triggered by the website's own buttons, a
-  small script on those sites also observes clipboard writes made by the page; when the setting
-  is disabled, the extension discards those notifications without inspecting the text.
+  small script on those sites also observes clipboard writes that the site itself makes and
+  reports them to the extension. That script is part of the page scripts injected on those sites
+  and is always present there; when interception is off, the extension discards what it reports
+  without inspecting the text.
 
-The extension does not poll or monitor the clipboard between these events, and it retains no
-clipboard content once the action is complete, apart from the local mappings described in §9.
+The extension does not poll or monitor the clipboard between these events. What it keeps
+afterwards is limited to the local storage described in §9: the placeholder ↔ original-value
+mappings needed for restoration, and, if you correct a detection while reviewing, that item's
+text together with up to 20 characters of the surrounding text on either side, kept in the local
+feedback log. Both stay on your device.
 
 **When clipboard text is written.** The extension writes to the clipboard only when you click a
 button it has put on the page, and only with text in which placeholders have been restored to
@@ -134,7 +139,10 @@ copy button works.
 
 **How to switch it off.** The copy-side behavior is controlled by the **Intercept copy** setting.
 Reviewing what you paste is controlled by the master protection toggle. With master protection
-switched off, the extension reads no clipboard text at all.
+switched off, the extension no longer reviews what you paste, no longer inspects what you copy,
+and stores nothing further. The page-world observer described above remains installed on the
+supported sites, because it is part of the page scripts injected there, but nothing acts on what
+it reports and no clipboard text is inspected, stored, or sent anywhere.
 
 In every case, clipboard content is processed **locally in your browser**. As stated in §5, it is
 never transmitted to DFKI.
@@ -172,7 +180,7 @@ you use:
 | `pg_settings` | Your preferences (categories, sensitivity, replacement mode, theme, Local AI options, allow/block lists) | To apply your chosen configuration |
 | `pg_entity_maps` | Placeholder ↔ original-value mappings, keyed by conversation URL | To restore original values you replaced |
 | `pg_identity_vault` | Identity vault entries (stable replacements for recurring identities) | To produce consistent replacements across pastes |
-| `pg_feedback` | Local correction/feedback records (capped at the last 1000 entries) | To improve your local experience; never uploaded |
+| `pg_feedback` | Local correction/feedback records: the corrected item's text, a short excerpt of the text around it, the detected and corrected category, and a timestamp (capped at the last 1000 entries) | To improve your local experience; never uploaded |
 | `pg_system_check` | Result of the local system/compatibility check | To show whether Local AI can run on your device |
 
 **Where it is stored:** locally in your browser profile, on your device. It is **not** collected
