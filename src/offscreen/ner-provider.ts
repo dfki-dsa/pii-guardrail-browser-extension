@@ -17,7 +17,18 @@ import type {
   PiiSpan,
 } from '../shared/message-types';
 import { loadSystemCheckResult } from '../shared/system-check-storage';
+import {
+  byteLength,
+  byteOffsetToStringIndex,
+  sliceTextByByteOffsets,
+  stringIndexToByteOffset,
+} from '../shared/text-offsets';
 import { debugLog } from './debug';
+import {
+  alignTokensToText,
+  alignmentCoverage,
+  type TokenCharRange,
+} from './token-offsets';
 
 export interface NerProvider {
   readonly mode: NerProviderMode;
@@ -54,12 +65,27 @@ export type TokenClassificationItem = {
   entity_group?: string;
   start?: number;
   end?: number;
+  /**
+   * Position of this token in the tokenizer's 'input_ids'. Present only for raw
+   * output. It is the join key back onto the offset table containing start and end.
+   */
+  index?: number;
 };
 
-type TokenClassificationPipeline = (
+/**
+ * The slice of 'PreTrainedTokenizer'
+ */
+export interface NerTokenizerLike {
+  tokenize(text: string, options?: { add_special_tokens?: boolean }): string[];
+  readonly model_max_length?: number;
+}
+
+type TokenClassificationPipeline = ((
   text: string,
-  options?: { aggregation_strategy?: 'simple'; ignore_labels?: string[] }
-) => Promise<TokenClassificationItem[]>;
+  options?: { aggregation_strategy?: 'simple' | 'none'; ignore_labels?: string[] }
+) => Promise<TokenClassificationItem[]>) & {
+  tokenizer?: NerTokenizerLike;
+};
 
 type OnnxWasmPaths = string | { mjs?: string; wasm?: string };
 
@@ -95,11 +121,15 @@ type TransformersModule = {
   ) => Promise<TokenClassificationPipeline>;
 };
 
-interface NavigatorWithWebGpu extends Navigator {
+/**
+ * A navigator-like object that may expose WebGPU (optional).
+ * See a full note in 'src/system-check/passive-signals.ts'.
+ */
+type NavigatorWithWebGpu = Partial<Navigator> & {
   gpu?: {
     requestAdapter?: () => Promise<unknown>;
   };
-}
+};
 
 interface TransformersProviderOptions {
   modelKey?: NerModelKey;
@@ -153,6 +183,17 @@ const REQUIRED_RUNTIME_ASSETS = [
 ] as const;
 
 export const DEFAULT_NER_CHUNK_OVERLAP_CHARS = 256;
+
+/**
+ * Token budget per chunk.
+ */
+export const DEFAULT_NER_MAX_TOKENS_PER_CHUNK = 480;
+export const DEFAULT_NER_CHUNK_OVERLAP_TOKENS = 64;
+
+/**
+ * Character ceiling used when no tokenizer is available to chunk by token.
+ */
+export const FALLBACK_MAX_CHUNK_CHARS = 800;
 
 // Distilbert-uncased + AI4Privacy emits softer scores than typical NER models
 // (e.g., a clear "Acme Corp" landed at 0.46 in real test traffic). Privacy
@@ -396,15 +437,10 @@ const FIXTURE_ENTITIES: readonly FixtureEntity[] = [
   { text: '1234567890', entityType: 'BANK_ACCOUNT', score: 0.86 },
 ];
 
-const encoder = new TextEncoder();
 // Keyed by model AND WebGPU dtype preference: a provider pins its pipeline
 // (and thus its ONNX artifact) on first detect, so switching the preference
 // must produce a fresh provider instead of reusing a stale pipeline.
 let cachedTransformersProviders = new Map<string, NerProvider>();
-
-function byteLength(text: string): number {
-  return encoder.encode(text).length;
-}
 
 function chunkBoundaryEnd(text: string, start: number, targetEnd: number, maxChunkChars: number): number {
   if (targetEnd >= text.length) return text.length;
@@ -453,6 +489,116 @@ export function chunkTextForNer(
 
     if (endChar >= text.length) break;
     startChar = Math.max(startChar + 1, endChar - boundedOverlap);
+  }
+
+  return chunks;
+}
+
+export interface NerTokenChunkingOptions {
+  maxTokens?: number;
+  overlapTokens?: number;
+}
+
+/**
+ * Below this share of placed tokens we stop trusting the offset table and fall
+ * back to the legacy search, which is less accurate but degrades visibly rather
+ * than silently pointing spans at the wrong words.
+ */
+export const MIN_ALIGNMENT_COVERAGE = 0.8;
+
+/** Positions reserved for the post-processor's `<s>` / `</s>` (or `[CLS]` / `[SEP]`). */
+const SPECIAL_TOKEN_BUDGET = 2;
+
+function safeTokenize(tokenizer: NerTokenizerLike, text: string): string[] | null {
+  try {
+    return tokenizer.tokenize(text, { add_special_tokens: true });
+  } catch (err) {
+    debugLog('[PG:ner] tokenize failed', err);
+    return null;
+  }
+}
+
+function tokenLimitFor(tokenizer: NerTokenizerLike): number {
+  const modelMax = tokenizer.model_max_length;
+  if (typeof modelMax !== 'number' || !Number.isFinite(modelMax) || modelMax <= SPECIAL_TOKEN_BUDGET) {
+    return DEFAULT_NER_MAX_TOKENS_PER_CHUNK;
+  }
+
+  return Math.min(DEFAULT_NER_MAX_TOKENS_PER_CHUNK, modelMax - SPECIAL_TOKEN_BUDGET);
+}
+
+/**
+ * Split text on token boundaries so no chunk can exceed the encoder's
+ * position limit.
+ *
+ * Boundaries are taken from the aligner's char ranges, so a chunk never cuts a
+ * word in half and no source character is dropped: alignTokensToText places
+ * every content token, and consecutive chunks are joined end-to-start.
+ */
+export function chunkTextByTokens(
+  text: string,
+  tokenizer: NerTokenizerLike,
+  options: NerTokenChunkingOptions = {}
+): NerTextChunk[] | null {
+  if (text.length === 0) return [];
+
+  const maxTokens = options.maxTokens ?? DEFAULT_NER_MAX_TOKENS_PER_CHUNK;
+  const overlapTokens = Math.min(options.overlapTokens ?? DEFAULT_NER_CHUNK_OVERLAP_TOKENS, maxTokens - 1);
+  if (maxTokens < 1) throw new Error('NER maxTokens must be at least 1.');
+  if (overlapTokens < 0) throw new Error('NER overlapTokens must be non-negative.');
+
+  let pieces: string[];
+  try {
+    pieces = tokenizer.tokenize(text, { add_special_tokens: false });
+  } catch {
+    return null;
+  }
+
+  const ranges = alignTokensToText(text, pieces);
+  const placed = ranges.filter((range): range is TokenCharRange => range !== null);
+  if (placed.length === 0) return null;
+
+  // sanity gate: if we could not place most of the tokens we do not trust
+  // the boundaries either, and the caller should fall back to character chunks.
+  if (alignmentCoverage(ranges) < 0.8) return null;
+  if (placed.length <= maxTokens) {
+    return [
+      {
+        text,
+        startChar: 0,
+        endChar: text.length,
+        startByte: 0,
+        endByte: byteLength(text),
+      },
+    ];
+  }
+
+  const chunks: NerTextChunk[] = [];
+  let tokenStart = 0;
+
+  while (tokenStart < placed.length) {
+    const tokenEnd = Math.min(placed.length, tokenStart + maxTokens);
+    // Close each chunk at the *next* chunk's first token rather than at its own
+    // last one, so consecutive chunks meet with no gap. Characters between
+    // tokens have no boundary of their own — whitespace, but also anything the
+    // aligner could not place (an <unk>, a dropped or zero-width character) —
+    // and closing on our own last token would leave them in no chunk at all,
+    // silently unscanned. Every character lands in at least one chunk; with
+    // overlapTokens > 0 the shared region is deliberately in two, and
+    // mergeOverlappingNerSpans dedupes the results.
+    const startChar = tokenStart === 0 ? 0 : placed[tokenStart].start;
+    const endChar = tokenEnd >= placed.length ? text.length : placed[tokenEnd].start;
+
+    chunks.push({
+      text: text.slice(startChar, endChar),
+      startChar,
+      endChar,
+      startByte: byteLength(text.slice(0, startChar)),
+      endByte: byteLength(text.slice(0, endChar)),
+    });
+
+    if (tokenEnd >= placed.length) break;
+    tokenStart = Math.max(tokenStart + 1, tokenEnd - overlapTokens);
   }
 
   return chunks;
@@ -845,33 +991,10 @@ function transformerItemToSpan(
   };
 }
 
-function charIndexForByteOffset(text: string, byteOffset: number): number {
-  if (byteOffset <= 0) return 0;
-
-  let bytes = 0;
-  for (let index = 0; index < text.length;) {
-    if (bytes >= byteOffset) return index;
-    const codePoint = text.codePointAt(index);
-    if (codePoint === undefined) return text.length;
-    const char = String.fromCodePoint(codePoint);
-    bytes += byteLength(char);
-    index += char.length;
-  }
-
-  return text.length;
-}
-
-function textSliceByByteRange(text: string, startByte: number, endByte: number): string {
-  return text.slice(
-    charIndexForByteOffset(text, startByte),
-    charIndexForByteOffset(text, endByte)
-  );
-}
-
 function canMergeAdjacentNerFragments(text: string, previous: PiiSpan, next: PiiSpan): boolean {
   if (previous.entity_type !== next.entity_type || previous.end > next.start) return false;
 
-  const gap = textSliceByByteRange(text, previous.end, next.start);
+  const gap = sliceTextByByteOffsets(text, previous.end, next.start);
   return gap.length <= 4 && /^[\s._@:/+\-(),]*$/.test(gap);
 }
 
@@ -887,7 +1010,7 @@ function mergeAdjacentNerFragments(text: string, spans: PiiSpan[]): PiiSpan[] {
 
     previous.end = span.end;
     previous.score = Math.max(previous.score, span.score);
-    previous.text = textSliceByByteRange(text, previous.start, previous.end);
+    previous.text = sliceTextByByteOffsets(text, previous.start, previous.end);
   }
 
   return merged;
@@ -898,8 +1021,10 @@ function isTokenCharacter(char: string): boolean {
 }
 
 function expandSpanToTokenBoundaries(text: string, span: PiiSpan): PiiSpan {
-  let startChar = charIndexForByteOffset(text, span.start);
-  let endChar = charIndexForByteOffset(text, span.end);
+  const originalStart = byteOffsetToStringIndex(text, span.start);
+  const originalEnd = byteOffsetToStringIndex(text, span.end);
+  let startChar = originalStart;
+  let endChar = originalEnd;
 
   while (startChar > 0 && isTokenCharacter(text.charAt(startChar - 1))) {
     startChar -= 1;
@@ -908,19 +1033,237 @@ function expandSpanToTokenBoundaries(text: string, span: PiiSpan): PiiSpan {
     endChar += 1;
   }
 
-  if (
-    startChar === charIndexForByteOffset(text, span.start) &&
-    endChar === charIndexForByteOffset(text, span.end)
-  ) {
+  if (startChar === originalStart && endChar === originalEnd) {
     return span;
   }
 
   return {
     ...span,
-    start: byteLength(text.slice(0, startChar)),
-    end: byteLength(text.slice(0, endChar)),
+    start: stringIndexToByteOffset(text, startChar),
+    end: stringIndexToByteOffset(text, endChar),
     text: text.slice(startChar, endChar),
   };
+}
+
+/**
+ * Characters allowed to sit between two same-type fragments that still belong to
+ * one entity.
+ *
+ * Sub-word pieces are usually flush. Multi-word names and addresses 
+ * are separated by a single space ('FirstName LastName',
+ * 'DE01 2345 6789'). Anything else (a comma, a bracket, a line break, a real
+ * word) ends the entity.
+ */
+const JOINABLE_GAP_PATTERN = /^[ \t._@:/+-]*$/;
+const MAX_JOINABLE_GAP_CHARS = 3;
+
+/**
+ * Longest unlabelled stretch we will bridge inside a single unbroken run of
+ * non-whitespace characters.
+ *
+ * The model sometimes mislabels a slice in the middle of an identifier. 
+ * If there is no whitespace anywhere in the gap, both detections
+ * belong to the same token run, and closing it can only over-redact
+ * characters that sit between two genuine hits.
+ */
+const MAX_INTRA_RUN_GAP_CHARS = 16;
+
+function isJoinableGap(gap: string): boolean {
+  if (gap.length <= MAX_JOINABLE_GAP_CHARS && JOINABLE_GAP_PATTERN.test(gap)) return true;
+  return gap.length <= MAX_INTRA_RUN_GAP_CHARS && !/\s/.test(gap);
+}
+
+function isWordCharacter(char: string): boolean {
+  return /^[\p{L}\p{N}_]$/u.test(char);
+}
+
+/**
+ * Grow a range outward only when it stops inside a word.
+ *
+ * completing the word recovers the rest. The guard is that 
+ * both the character inside the boundary and the one outside it 
+ * must be word characters.
+ */
+function completePartialWord(text: string, range: TokenCharRange): TokenCharRange {
+  let { start, end } = range;
+
+  while (start > 0 && isWordCharacter(text.charAt(start)) && isWordCharacter(text.charAt(start - 1))) {
+    start -= 1;
+  }
+  while (end < text.length && isWordCharacter(text.charAt(end - 1)) && isWordCharacter(text.charAt(end))) {
+    end += 1;
+  }
+
+  return { start, end };
+}
+
+interface AlignedTokenPrediction {
+  entityType: EntityType;
+  rawLabel: string;
+  score: number;
+  range: TokenCharRange;
+}
+
+const EMAIL_DOMAIN_TAIL_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
+  'ORGANIZATION',
+  'URL',
+  'LOCATION',
+  'MISC',
+]);
+
+/**
+ * Rejoin same-type spans that a mislabelled slice split apart mid-identifier.
+ *
+ * Grouping already bridges an unlabelled gap, but the model sometimes puts a
+ * different label in the middle instead and the middle span then fell under 
+ * its own threshold. Requiring the whole bridge to be free of
+ * whitespace keeps this to a single token run.
+ */
+function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
+  const out: PiiSpan[] = [];
+
+  for (const span of spans) {
+    let mergedInto = -1;
+
+    for (let i = out.length - 1; i >= 0 && i >= out.length - 3; i -= 1) {
+      const candidate = out[i];
+      if (candidate.entity_type !== span.entity_type || candidate.end > span.start) continue;
+
+      // An empty bridge counts: completing partial words can leave two halves of
+      // one identifier flush against each other with the mislabelled slice
+      // overlapping them both.
+      const bridge = sliceTextByByteOffsets(text, candidate.end, span.start);
+      if (bridge.length > MAX_INTRA_RUN_GAP_CHARS || /\s/.test(bridge)) continue;
+
+      candidate.end = span.end;
+      candidate.text = sliceTextByByteOffsets(text, candidate.start, candidate.end);
+      mergedInto = i;
+      break;
+    }
+
+    if (mergedInto === -1) {
+      out.push(span);
+      continue;
+    }
+
+    // Anything the merge swallowed is no longer its own span.
+    const absorber = out[mergedInto];
+    out.splice(
+      mergedInto + 1,
+      out.length - mergedInto - 1,
+      ...out.slice(mergedInto + 1).filter((other) => other.end > absorber.end)
+    );
+  }
+
+  return out;
+}
+
+function stitchEmailDomains(text: string, spans: PiiSpan[]): PiiSpan[] {
+  const stitched: PiiSpan[] = [];
+
+  for (const span of spans) {
+    const previous = stitched[stitched.length - 1];
+    if (
+      previous &&
+      previous.entity_type === 'EMAIL' &&
+      EMAIL_DOMAIN_TAIL_TYPES.has(span.entity_type) &&
+      previous.end <= span.start
+    ) {
+      const gap = sliceTextByByteOffsets(text, previous.end, span.start);
+      const joinsAddress = gap === '@' || (gap === '' && previous.text.endsWith('@'));
+      if (joinsAddress) {
+        previous.end = span.end;
+        previous.text = sliceTextByByteOffsets(text, previous.start, previous.end);
+        continue;
+      }
+    }
+
+    stitched.push(span);
+  }
+
+  return stitched;
+}
+
+/**
+ * Build spans from raw per-token predictions using real character offsets.
+ *
+ * 'ranges' must be the aligner's output for the same tokenizer call the model
+ * saw, so 'item.index' addresses it directly. Grouping is by entity type plus
+ * source adjacency rather than by the model's BIO prefixes. 'simple'
+ * strategy therefore breaks one email into six groups.
+ *
+ * A group's score is its opening token's score (HuggingFace's 'first' strategy).
+ * Measured on real output, confidence concentrates on entity onset and decays
+ * across continuation pieces: 'firstName.lastName@` scores
+ * [0.999, 0.999, 0.473, 0.670, 0.586, 0.631], so averaging would push a genuine
+ * address under the email gate.
+ */
+export function alignedTokensToSpans(
+  text: string,
+  output: readonly TokenClassificationItem[],
+  ranges: readonly (TokenCharRange | null)[],
+  modelKey: NerModelKey = DEFAULT_NER_MODEL
+): PiiSpan[] {
+  const predictions: AlignedTokenPrediction[] = [];
+
+  for (const item of output) {
+    if (typeof item.index !== 'number') continue;
+
+    const rawLabel = item.entity_group ?? item.entity;
+    const entityType = mapTransformerLabelToEntityType(rawLabel, modelKey);
+    if (!entityType || !rawLabel) continue;
+
+    const range = ranges[item.index];
+    if (!range || range.start >= range.end) continue;
+
+    predictions.push({ entityType, rawLabel, score: item.score, range });
+  }
+
+  predictions.sort((a, b) => a.range.start - b.range.start || a.range.end - b.range.end);
+
+  const grouped: PiiSpan[] = [];
+  let current: { prediction: AlignedTokenPrediction; end: number } | null = null;
+
+  const flush = (): void => {
+    if (!current) return;
+    const range = completePartialWord(text, {
+      start: current.prediction.range.start,
+      end: current.end,
+    });
+    grouped.push({
+      start: stringIndexToByteOffset(text, range.start),
+      end: stringIndexToByteOffset(text, range.end),
+      entity_type: current.prediction.entityType,
+      score: current.prediction.score,
+      text: text.slice(range.start, range.end),
+      source: 'ner',
+      nerRawLabel: current.prediction.rawLabel,
+    });
+    current = null;
+  };
+
+  for (const prediction of predictions) {
+    if (!current) {
+      current = { prediction, end: prediction.range.end };
+      continue;
+    }
+
+    const sameType = current.prediction.entityType === prediction.entityType;
+    const gap = prediction.range.start >= current.end
+      ? text.slice(current.end, prediction.range.start)
+      : '';
+
+    if (sameType && prediction.range.start >= current.prediction.range.start && isJoinableGap(gap)) {
+      current.end = Math.max(current.end, prediction.range.end);
+      continue;
+    }
+
+    flush();
+    current = { prediction, end: prediction.range.end };
+  }
+  flush();
+
+  return stitchEmailDomains(text, closeIntraRunGaps(text, grouped));
 }
 
 export function transformerOutputToSpans(
@@ -1040,49 +1383,85 @@ export function createTransformersNerProvider(
     return pipelinePromise;
   }
 
+  function planChunks(text: string, tokenizer: NerTokenizerLike | undefined): NerTextChunk[] {
+    if (tokenizer) {
+      const tokenChunks = chunkTextByTokens(text, tokenizer, {
+        maxTokens: tokenLimitFor(tokenizer),
+      });
+      if (tokenChunks) return tokenChunks;
+      debugLog('[PG:ner] detect: token chunking unavailable, falling back to characters');
+    }
+
+    // No tokenizer to measure with, so cap on characters pessimistically rather
+    // than letting a long paste run past the encoder's 512 positions unseen.
+    return chunkTextForNer(text, {
+      ...chunking,
+      maxChunkChars: Math.min(chunking?.maxChunkChars ?? MAX_TEXT_LENGTH, FALLBACK_MAX_CHUNK_CHARS),
+    });
+  }
+
   async function detectChunked(
     text: string,
     classifier: TokenClassificationPipeline,
     signal?: AbortSignal
   ): Promise<{ spans: PiiSpan[]; chunkCount: number }> {
     throwIfAborted(signal);
-    const chunks = chunkTextForNer(text, chunking);
+    const tokenizer = classifier.tokenizer;
+    const chunks = planChunks(text, tokenizer);
     debugLog('[PG:ner] detect: chunked text', {
       model: model.key,
       textLength: text.length,
       chunkCount: chunks.length,
+      chunkedBy: tokenizer ? 'tokens' : 'characters',
     });
     const spans: PiiSpan[] = [];
 
     for (let i = 0; i < chunks.length; i += 1) {
       throwIfAborted(signal);
       const chunk = chunks[i];
+
+      // Offsets come from aligning the tokenizer's own pieces to the chunk.
+      // Transformers.js leaves 'start'/'end' undefined for token-classification,
+      // and reconstructing them by searching for each predicted fragment puts
+      // spans on the wrong words entirely (see token-offsets.ts).
+      const pieces = tokenizer ? safeTokenize(tokenizer, chunk.text) : null;
+      const ranges = pieces ? alignTokensToText(chunk.text, pieces) : null;
+      const coverage = ranges ? alignmentCoverage(ranges) : 0;
+      const useOffsets = ranges !== null && coverage >= MIN_ALIGNMENT_COVERAGE;
+
       const chunkStartedAt = performance.now();
-      const output = await classifier(chunk.text, { aggregation_strategy: 'simple' });
+      const output = await classifier(
+        chunk.text,
+        useOffsets ? { aggregation_strategy: 'none' } : { aggregation_strategy: 'simple' }
+      );
       throwIfAborted(signal);
       const inferenceMs = Math.round(performance.now() - chunkStartedAt);
-      const sample = output.slice(0, 10).map((item) => ({
-        word: item.word,
-        entity: item.entity_group ?? item.entity,
-        score: Number(item.score?.toFixed(3)),
-        start: item.start,
-        end: item.end,
-      }));
-      // Unconditional diagnostic — see comment in detect() above.
-      console.log('[PG:ner] detect: chunk inference', {
+
+      const converted = (
+        useOffsets
+          ? alignedTokensToSpans(chunk.text, output, ranges, model.key)
+          : transformerOutputToSpans(chunk.text, output, model.key)
+      ).map((span) => shiftSpanToOriginalText(span, chunk));
+
+      debugLog('[PG:ner] detect: chunk inference', {
         chunkIndex: i,
         chunkChars: chunk.text.length,
+        tokenCount: pieces?.length,
+        offsetMode: useOffsets ? 'aligned' : 'legacy-search',
+        alignmentCoverage: Number(coverage.toFixed(3)),
         inferenceMs,
         rawItemCount: output.length,
-        sample: sample.map((item) => ({ ...item, word: item.word ? `[${item.word.length} chars]` : item.word })),
-      });
-      const converted = transformerOutputToSpans(chunk.text, output, model.key).map((span) =>
-        shiftSpanToOriginalText(span, chunk)
-      );
-      debugLog('[PG:ner] detect: chunk converted to spans', {
-        chunkIndex: i,
         convertedSpanCount: converted.length,
       });
+
+      if (!useOffsets) {
+        console.warn('[PG:ner] detect: offset alignment unavailable, span positions are approximate', {
+          chunkIndex: i,
+          hasTokenizer: Boolean(tokenizer),
+          alignmentCoverage: Number(coverage.toFixed(3)),
+        });
+      }
+
       spans.push(...converted);
     }
 
