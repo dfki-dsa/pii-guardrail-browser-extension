@@ -21,8 +21,24 @@ describe.each([
   [
     'ChatGPT',
     new ChatGptAdapter(),
-    ['https://chatgpt.com/c/9f1c-2b', 'https://chatgpt.com/g/g-abc/c/9f1c-2b'],
-    ['https://chatgpt.com/', 'https://chatgpt.com/g/g-abc'],
+    [
+      'https://chatgpt.com/c/9f1c-2b',
+      'https://chatgpt.com/g/g-abc/c/9f1c-2b',
+      // The web-mobile build routes conversations under `/uc/`. Missing this
+      // stranded every mapping under the shared "new chat" key and made the
+      // content script wipe the live map when the chat got its own URL.
+      'https://chatgpt.com/uc/9f1c-2b',
+      'https://chatgpt.com/g/g-abc/uc/9f1c-2b',
+      'https://chatgpt.com/uc/9f1c-2b?model=auto',
+    ],
+    [
+      'https://chatgpt.com/',
+      'https://chatgpt.com/g/g-abc',
+      // A trailing `c`, and segments that merely contain one, are not routes.
+      'https://chatgpt.com/uc/',
+      'https://chatgpt.com/codex/tasks',
+      'https://chatgpt.com/settings/account',
+    ],
   ],
   [
     'Gemini',

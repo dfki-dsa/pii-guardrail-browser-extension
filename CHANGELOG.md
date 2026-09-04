@@ -6,6 +6,8 @@ The project follows public beta release notes for `0.x` versions.
 
 ## Unreleased
 
+- Fixed replaced values still being forgotten on ChatGPT, in the layout ChatGPT now also serves to signed-in users on the desktop. Version 0.4.2 fixed this for the classic layout, but the newer one gives a conversation a web address of a different shape, which the extension did not recognize as a conversation at all. Sending the first message therefore looked like a switch to a different chat: the replacements recorded while composing were discarded instead of moved across, so replies came back with placeholders that could no longer be turned back into your original values. Beyond the missing reveal, this also reset the numbering, so a later paste in the same chat could reuse a label such as the first person placeholder for a different person. Conversations in this layout are now recognized, and replacements move with them. Chats started before this fix keep their replacements filed under the "new chat" screen and cannot be restored retroactively.
+
 ## [0.4.2] - Public Beta
 
 - Fixed replaced values being forgotten once a new chat got its own address. Starting a chat, pasting something that was replaced and sending it moves the page from the "new chat" screen to the conversation's own URL, and the replacements stayed filed under the screen you left — so after a reload the reply could no longer be turned back into your original values. They now move with the conversation, and switching between existing chats without a page reload loads the right conversation's replacements.

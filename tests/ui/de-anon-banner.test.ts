@@ -240,6 +240,43 @@ describe('attachDeAnonBanner', () => {
     expect(responseElement.dataset.pgBanner).toBe('attached');
   });
 
+  it('reveals placeholders nested inside a ChatGPT canvas block', () => {
+    // ChatGPT renders a canvas ("writing block") as a widget section nested
+    // inside the assistant turn, with the prose in a `role="textbox"` wrapper
+    // rather than as a direct child. The other fixtures here keep their
+    // placeholders in flat top-level prose, so nothing covered the reveal
+    // walk reaching through that wrapper.
+    const entityMap = new EntityMap({ '[PERSON_1]': 'Björn', '[PERSON_4]': 'Lukas Wagner' });
+
+    const container = document.createElement('div');
+    const responseElement = document.createElement('div');
+    responseElement.innerHTML = `
+      <div>Hier ist eine freundliche Absage:</div>
+      <section data-assistant-writing-block data-writing-block-id="58321" data-shared-block-mounted>
+        <div data-assistant-writing-block-content role="textbox">
+          <p>Vielen Dank an [PERSON_1] für die Organisation.</p>
+          <p>Und an [PERSON_4] ganz liebe Grüße.</p>
+        </div>
+      </section>
+    `;
+    container.appendChild(responseElement);
+    document.body.appendChild(container);
+
+    attachDeAnonBanner(responseElement, entityMap);
+    const revealBtn = (container.firstElementChild as HTMLElement).shadowRoot
+      ?.getElementById('pg-reveal-btn') as HTMLButtonElement;
+    revealBtn.click();
+
+    const overlayEl = responseElement.querySelector('.pg-deanon-overlay-container');
+    expect(overlayEl?.querySelectorAll('.pg-revealed')).toHaveLength(2);
+    expect(overlayEl?.textContent).toContain('Björn');
+    expect(overlayEl?.textContent).toContain('Lukas Wagner');
+    expect(overlayEl?.textContent).not.toContain('[PERSON_1]');
+    // The widget wrapper itself must survive, or the revealed copy loses the
+    // canvas's block structure.
+    expect(overlayEl?.querySelectorAll('[data-assistant-writing-block]')).toHaveLength(1);
+  });
+
   it('does not attach a second banner to the same response element', () => {
     const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
     const responseElement = document.createElement('div');

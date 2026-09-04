@@ -2,18 +2,26 @@ import type { SiteAdapter } from './adapter-interface';
 import { insertTextCompat, urlPath } from './adapter-interface';
 
 /**
- * ChatGPT serves two different web builds depending on auth state, and their
- * DOM contracts share nothing. Both verified directly against chatgpt.com:
+ * ChatGPT serves two different web builds whose DOM contracts share nothing.
+ * Both verified directly against chatgpt.com:
  *
- * - Signed out: assets under `/unauth-mweb/` (OpenAI's "web-mobile" bundle,
- *   served at desktop widths too). The composer is a `<textarea>` tagged
+ * - "web-mobile" (OpenAI's `/unauth-mweb/` bundle): rooted at
+ *   `#web-mobile-root`, with `main[data-mobile-shell="desktop"]` at desktop
+ *   widths. The composer is a `<textarea>` tagged
  *   `[data-mobile-composer-prompt]` — the selector the site's own scripts use
- *   — and turns are marked `data-message-role`. No `#prompt-textarea` exists.
- * - Signed in: the build this extension was written against. `#prompt-textarea`
- *   is the live ProseMirror `contenteditable`, and turns are marked
- *   `data-message-author-role`.
+ *   — turns are `li[data-message-role]`, and conversations live at
+ *   `/uc/<id>`. No `#prompt-textarea` exists.
+ * - The build this extension was written against: `#prompt-textarea` is the
+ *   live ProseMirror `contenteditable`, turns are marked
+ *   `data-message-author-role`, and conversations live at `/c/<id>`.
  *
- * Matching both is what makes the signed-out case work. The `isRendered`
+ * Do not treat the web-mobile build as the signed-out case. It was first
+ * observed that way, but it is also served to signed-in desktop users with
+ * persisted conversations — an assumption this file previously encoded, and
+ * the reason `hasConversationId` went stale against `/uc/<id>`. Every
+ * contract below (composer, turns, route) must hold for either build.
+ *
+ * Matching both is what makes the web-mobile case work. The `isRendered`
  * tie-break below is purely defensive: no observed page needs it, since the
  * two contracts have so far never appeared together. It exists because
  * matching two contracts introduces an ordering hazard that returning the
@@ -31,6 +39,21 @@ const INPUT_SELECTORS = [
 
 const RESPONSE_SELECTOR =
   '[data-message-role="assistant"], [data-message-author-role="assistant"]';
+
+/**
+ * Paths that identify a persisted conversation rather than the "new chat"
+ * screen. Both builds are covered: `/c/<id>` on the signed-in client and
+ * `/uc/<id>` on the web-mobile one, each optionally behind a GPT's
+ * `/g/<slug>` prefix.
+ *
+ * Matched per path segment rather than with a substring test. The previous
+ * `includes('/c/')` missed `/uc/<id>` outright — the `u` sits between the
+ * slash and the `c`, so the literal never appears — which stranded every
+ * web-mobile conversation's mappings under the shared "new chat" key and
+ * left the content script treating the URL rewrite as a switch to a
+ * different conversation.
+ */
+const CONVERSATION_PATH_REGEX = /(^|\/)u?c\/[^/]+/;
 
 /**
  * Reject composer candidates the site itself treats as unusable. Mirrors
@@ -60,8 +83,7 @@ export class ChatGptAdapter implements SiteAdapter {
   readonly name = 'ChatGPT';
 
   hasConversationId(url: string): boolean {
-    // chatgpt.com/ -> /c/<uuid>; GPTs land on /g/<slug> then /g/<slug>/c/<uuid>.
-    return urlPath(url).includes('/c/');
+    return CONVERSATION_PATH_REGEX.test(urlPath(url));
   }
 
   getInputElement(): HTMLElement | null {
