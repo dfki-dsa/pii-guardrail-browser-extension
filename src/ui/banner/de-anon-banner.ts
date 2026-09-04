@@ -1,17 +1,50 @@
 /**
  * Privacy Guardrail — De-anonymization Banner (Shadow DOM)
  *
- * Attaches to AI response elements that contain placeholders.
- * Provides a toggle to reveal/hide original PII values as a
+ * Attaches to a region of a reply that contains resolvable replacement
+ * tokens. Provides a toggle to reveal the original values as a
  * non-destructive overlay on the response text.
+ *
+ * The banner never captures what is resolvable. It is handed a resolver and
+ * asks it again on every render and every click, because the conversation
+ * scope grows while the page is open — a record finishes loading, the page is
+ * scanned, a token is filed. A banner that answered from a snapshot taken
+ * when it attached would be wrong for the rest of the page's life, and wrong
+ * in the direction of offering the user less than is actually known.
  */
 
-import { EntityMap } from '../../shared/entity-map';
-import { deAnonymize } from '../../shared/de-anonymizer';
-import { resolveText } from '../../shared/placeholder-resolver';
+import type { ResolveResult } from '../../shared/placeholder-resolver';
+import { isInEditableRegion } from '../shared/editable-region';
 import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
 
+/** Resolves the tokens currently in scope wherever they occur in `text`. */
+export type TokenResolver = (text: string) => ResolveResult;
+
 type FormControl = HTMLInputElement | HTMLTextAreaElement;
+
+export interface DeAnonBannerOptions {
+  /** Visual theme to render in. Defaults to `dark`. */
+  theme?: 'dark' | 'light';
+  /**
+   * Read the live `.value` of descendant `<input>` / `<textarea>` controls as
+   * part of the reply's text.
+   *
+   * True only inside a turn the site adapter matched, where the controls are
+   * known to be the reply's own artifact card. The generic fallback attaches
+   * on markup nobody has vouched for, and reads inert text only: a form
+   * control there could be any field on the page, and revealing into one
+   * would be writing originals into something the user may send.
+   */
+  readFormControls?: boolean;
+}
+
+/** Handle on an attached banner, so its count can follow the scope. */
+export interface AttachedBanner {
+  /** The reply region this banner annotates. */
+  readonly element: HTMLElement;
+  /** Re-resolve and re-render the count. Cheap; safe to call often. */
+  refresh(): void;
+}
 
 /** Collect descendant `<input>` and `<textarea>` controls in document
  *  order. Used to surface artifact-card content that lives on the
@@ -45,31 +78,38 @@ interface HiddenTextState {
 }
 
 /**
- * Create and attach a de-anonymization banner above a response element.
+ * Create and attach a de-anonymization banner above a reply region.
  *
- * @param theme — visual theme to render in. Defaults to `dark`.
+ * Returns a handle whose `refresh()` re-renders the count against the current
+ * scope, or null when nothing was attached — an editable target, a region
+ * already carrying a banner, or nothing resolvable in it yet. A null return
+ * is not final: the caller may try the same element again once the scope has
+ * grown.
  */
 export function attachDeAnonBanner(
   responseElement: HTMLElement,
-  entityMap: EntityMap,
-  theme: 'dark' | 'light' = 'dark',
-): void {
+  resolve: TokenResolver,
+  options: DeAnonBannerOptions = {},
+): AttachedBanner | null {
+  const theme = options.theme ?? 'dark';
+  const readFormControls = options.readFormControls ?? false;
+
   // Don't attach twice
-  if (responseElement.dataset.pgBanner === 'attached') return;
+  if (responseElement.dataset.pgBanner === 'attached') return null;
 
-  // Build a combined detection text spanning visible markdown and any
-  // descendant form-control values (artifact cards render their content
-  // into <input>/<textarea>, whose current `.value` is not part of
-  // textContent for controlled React components).
-  const formControls = collectFormControls(responseElement);
-  const text = buildCombinedText(responseElement, formControls);
+  // Revealing replaces the region it annotates. Doing that to a message box
+  // would write original values into text about to be sent.
+  if (isInEditableRegion(responseElement)) return null;
 
-  // Single source of truth for placeholder + synthetic resolution. Used
-  // by both the banner and the clipboard interceptor so the two surfaces
-  // never disagree on what is revealable.
-  const { matches } = resolveText(text, entityMap);
-  const totalRevealable = matches.length;
-  if (totalRevealable === 0) return;
+  /** The reply's text as this banner is allowed to read it. */
+  const currentText = (): string =>
+    readFormControls
+      ? buildCombinedText(responseElement, collectFormControls(responseElement))
+      : responseElement.textContent || '';
+
+  const totalRevealable = (): number => resolve(currentText()).matches.length;
+
+  if (totalRevealable() === 0) return null;
 
   // Claim the element only once a banner is actually going to be rendered.
   // Marking it before the bail-out above would permanently suppress the
@@ -91,18 +131,31 @@ export function attachDeAnonBanner(
     <style>${BANNER_STYLES}</style>
     <div class="pg-banner pg-design-surface" data-theme="${theme}" role="status" aria-live="polite">
       <span class="pg-banner-icon" aria-hidden="true"></span>
-      <span class="pg-banner-text pg-design-muted">${totalRevealable} replaced item${totalRevealable !== 1 ? 's' : ''}</span>
+      <span class="pg-banner-text pg-design-muted"></span>
       <button class="pg-banner-btn pg-design-button" id="pg-reveal-btn">Reveal originals</button>
       <button class="pg-banner-btn pg-banner-copy pg-design-button pg-design-button-subtle" id="pg-copy-btn" title="Copy restored text">Copy</button>
     </div>
   `;
 
+  const countEl = shadow.querySelector('.pg-banner-text') as HTMLElement;
   const revealBtn = shadow.getElementById('pg-reveal-btn')!;
   const copyBtn = shadow.getElementById('pg-copy-btn')!;
 
+  const renderCount = (): void => {
+    // While revealed, the region holds originals rather than tokens, so a
+    // re-resolve would report zero. The count freezes until it is hidden
+    // again, which is also when it can next be wrong.
+    if (revealed) return;
+    const count = totalRevealable();
+    countEl.textContent = `${count} replaced item${count !== 1 ? 's' : ''}`;
+  };
+  renderCount();
+
   revealBtn.addEventListener('click', () => {
     if (!revealed) {
-      overlayEl = buildRevealLayer(responseElement, entityMap);
+      // Resolved here, not at attach time: everything learned about the
+      // conversation since then counts towards what this click reveals.
+      overlayEl = buildRevealLayer(responseElement, resolve, readFormControls);
       ({ hiddenElements, hiddenTextNodes } = hideOriginalContent(responseElement));
       responseElement.appendChild(overlayEl);
 
@@ -119,15 +172,14 @@ export function attachDeAnonBanner(
       hiddenTextNodes = [];
       revealBtn.textContent = 'Reveal originals';
       revealed = false;
+      renderCount();
     }
   });
 
   copyBtn.addEventListener('click', () => {
     // Re-collect at click time so any user edits to artifact text fields
     // are reflected in what gets copied.
-    const liveControls = collectFormControls(responseElement);
-    const liveText = buildCombinedText(responseElement, liveControls);
-    const deAnon = deAnonymize(liveText, entityMap);
+    const deAnon = resolve(currentText()).deAnonText;
     navigator.clipboard.writeText(deAnon).then(() => {
       copyBtn.textContent = 'Copied!';
       setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
@@ -136,9 +188,15 @@ export function attachDeAnonBanner(
 
   // Insert banner before the response element
   responseElement.parentElement?.insertBefore(host, responseElement);
+
+  return { element: responseElement, refresh: renderCount };
 }
 
-function buildRevealLayer(responseElement: HTMLElement, entityMap: EntityMap): HTMLElement {
+function buildRevealLayer(
+  responseElement: HTMLElement,
+  resolve: TokenResolver,
+  readFormControls: boolean,
+): HTMLElement {
   const overlayEl = document.createElement('div');
   overlayEl.className = 'pg-deanon-overlay-container';
   overlayEl.style.display = 'contents';
@@ -147,15 +205,15 @@ function buildRevealLayer(responseElement: HTMLElement, entityMap: EntityMap): H
   // their current value on the `.value` property; cloneNode(true) only
   // copies the markup-level default, so artifact-card text would be lost
   // in the clone for any React-controlled control.
-  const originalControls = collectFormControls(responseElement);
+  const originalControls = readFormControls ? collectFormControls(responseElement) : [];
   const liveValues = originalControls.map((c) => c.value);
 
   for (const child of Array.from(responseElement.childNodes)) {
     overlayEl.appendChild(child.cloneNode(true));
   }
 
-  replacePlaceholdersInSubtree(overlayEl, entityMap);
-  replaceFormControlsInSubtree(overlayEl, liveValues, entityMap);
+  replacePlaceholdersInSubtree(overlayEl, resolve);
+  if (readFormControls) replaceFormControlsInSubtree(overlayEl, liveValues, resolve);
 
   return overlayEl;
 }
@@ -169,7 +227,7 @@ function buildRevealLayer(responseElement: HTMLElement, entityMap: EntityMap): H
 function replaceFormControlsInSubtree(
   overlayEl: HTMLElement,
   liveValues: string[],
-  entityMap: EntityMap,
+  resolve: TokenResolver,
 ): void {
   const overlayControls = collectFormControls(overlayEl);
   // Order matches because `collectFormControls` returns document order
@@ -186,7 +244,7 @@ function replaceFormControlsInSubtree(
       replacement.style.fontFamily = 'inherit';
       replacement.style.margin = '0';
     }
-    const fragment = buildReplacementFragment(value, entityMap);
+    const fragment = buildReplacementFragment(value, resolve);
     if (fragment) {
       replacement.appendChild(fragment);
     } else {
@@ -196,7 +254,7 @@ function replaceFormControlsInSubtree(
   }
 }
 
-function replacePlaceholdersInSubtree(root: ParentNode, entityMap: EntityMap): void {
+function replacePlaceholdersInSubtree(root: ParentNode, resolve: TokenResolver): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
 
@@ -206,7 +264,7 @@ function replacePlaceholdersInSubtree(root: ParentNode, entityMap: EntityMap): v
   }
 
   for (const textNode of textNodes) {
-    const fragment = buildReplacementFragment(textNode.textContent || '', entityMap);
+    const fragment = buildReplacementFragment(textNode.textContent || '', resolve);
     if (fragment) {
       textNode.parentNode?.replaceChild(fragment, textNode);
     }
@@ -215,9 +273,9 @@ function replacePlaceholdersInSubtree(root: ParentNode, entityMap: EntityMap): v
 
 function buildReplacementFragment(
   text: string,
-  entityMap: EntityMap,
+  resolve: TokenResolver,
 ): DocumentFragment | null {
-  const { matches } = resolveText(text, entityMap);
+  const { matches } = resolve(text);
   if (matches.length === 0) return null;
 
   const fragment = document.createDocumentFragment();

@@ -1,7 +1,10 @@
 import { derived, writable, get, type Readable, type Writable } from 'svelte/store';
 import type {
+  ComposerMatchState,
   DetectionOptions,
   DetectPiiRequest,
+  GetPageProtectionStateRequest,
+  PageProtectionStateResponse,
   GetNerStatusRequest,
   GetSystemCompatibilityStatusRequest,
   GroupName,
@@ -60,6 +63,8 @@ export type ProtectionModel = {
   modelLabel: Writable<string>;
   systemCompatibility: Writable<SystemCompatibilityStatus | null>;
   resourceSummary: Readable<ResourceSummary | null>;
+  /** How the active supported page last found its message box, if it has. */
+  composerMatch: Writable<ComposerMatchState | null>;
   toggle: () => void;
   setEnabled: (enabled: boolean) => Promise<void>;
 };
@@ -181,6 +186,7 @@ export function createAppModels(): AppModels {
   const version = writable(typeof chrome !== 'undefined' ? chrome.runtime.getManifest().version : '');
   const modelLabel = writable('');
   const systemCompatibility = writable<SystemCompatibilityStatus | null>(null);
+  const composerMatch = writable<ComposerMatchState | null>(null);
   const nerStatusRaw = writable<NerStatus | null>(null);
   const settingsStore = writable<Settings | null>(null);
   const resourceSummary: Readable<ResourceSummary | null> = derived(
@@ -309,6 +315,26 @@ export function createAppModels(): AppModels {
     }
   }
 
+  /**
+   * Ask the page in front of the user how it is attaching to the site.
+   *
+   * Only the content script knows, and only from the moment a paste asks it.
+   * A tab with no content script — an unsupported site, a page loaded before
+   * the extension — simply does not answer, which is the same as having
+   * nothing to report.
+   */
+  async function fetchPageProtectionState(): Promise<ComposerMatchState | null> {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (typeof tab?.id !== 'number') return null;
+      const request: GetPageProtectionStateRequest = { type: 'GET_PAGE_PROTECTION_STATE' };
+      const response: PageProtectionStateResponse = await chrome.tabs.sendMessage(tab.id, request);
+      return response?.type === 'PAGE_PROTECTION_STATE' ? response.payload.composerMatch : null;
+    } catch {
+      return null;
+    }
+  }
+
   function applyLocalAiOffStatus(): void {
     lastNerStatus = null;
     nerStatusRaw.set(null);
@@ -324,6 +350,7 @@ export function createAppModels(): AppModels {
 
     const systemStatus = await fetchSystemCompatibility();
     systemCompatibility.set(systemStatus);
+    composerMatch.set(await fetchPageProtectionState());
 
     const config = currentDetectionConfig(currentSettings, nerModel);
     if (config.ner_provider === 'off') {
@@ -404,6 +431,7 @@ export function createAppModels(): AppModels {
       modelLabel,
       systemCompatibility,
       resourceSummary,
+      composerMatch,
       toggle: () => void saveAndBroadcast({ enabled: !get(enabled) }),
       setEnabled: (value) => saveAndBroadcast({ enabled: value }),
     },

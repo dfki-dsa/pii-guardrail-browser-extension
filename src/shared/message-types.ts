@@ -372,6 +372,31 @@ export interface Settings {
   autoWarmLocalAiOnActiveSupportedPage: boolean;
 }
 
+/**
+ * Asks a supported page how its protection is currently doing. Answered by
+ * the content script; the popup is the only caller.
+ */
+export interface GetPageProtectionStateRequest {
+  type: 'GET_PAGE_PROTECTION_STATE';
+}
+
+/**
+ * How a supported page's message box was last found.
+ *
+ * `adapter` is the intended case. `generic` means the site's markup no longer
+ * matches what the extension knows and the page's own paste target was used
+ * instead — protection held, on a guess. `none` means it did not. `null` says
+ * no paste has asked yet.
+ */
+export type ComposerMatchState = 'adapter' | 'generic' | 'none';
+
+export interface PageProtectionStateResponse {
+  type: 'PAGE_PROTECTION_STATE';
+  payload: {
+    composerMatch: ComposerMatchState | null;
+  };
+}
+
 export type Message =
   | DetectPiiRequest
   | CancelDetectionRequest
@@ -394,4 +419,6 @@ export type Message =
   | CollectSystemSignalsRequest
   | SystemSignalsResponse
   | ReRunSystemCheckRequest
-  | ApplyCriticalRecommendationRequest;
+  | ApplyCriticalRecommendationRequest
+  | GetPageProtectionStateRequest
+  | PageProtectionStateResponse;

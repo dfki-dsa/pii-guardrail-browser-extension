@@ -1,15 +1,17 @@
 <script lang="ts">
 	import type { Readable, Writable } from 'svelte/store';
 	import type { StatusPill } from '../popup-model.svelte';
+	import type { ComposerMatchState } from '../../shared/message-types';
 	import type { ResourceSummary } from '../../shared/popup-resource-summary';
 	import { AI_TRANSPARENCY_NOTICE } from '../../shared/project-links';
 
-	let { enabled, wasmStatus, nerStatus, cpuFallback, resourceSummary }: {
+	let { enabled, wasmStatus, nerStatus, cpuFallback, resourceSummary, composerMatch }: {
 		enabled: Writable<boolean>;
 		wasmStatus: Writable<StatusPill>;
 		nerStatus: Writable<StatusPill>;
 		cpuFallback: Writable<boolean>;
 		resourceSummary: Readable<ResourceSummary | null>;
+		composerMatch: Writable<ComposerMatchState | null>;
 	} = $props();
 </script>
 
@@ -33,6 +35,16 @@
 
 <p class="ai-notice" role="note">{AI_TRANSPARENCY_NOTICE}</p>
 
+{#if $composerMatch === 'generic'}
+	<!-- Quiet on purpose. Pastes on this page are still reviewed; what has
+	     changed is that the extension is working from a generic match of the
+	     page rather than from what it knows about the site. The strongest
+	     warning is reserved for pastes that were genuinely not reviewed. -->
+	<p class="generic-match" role="note">
+		Working from a generic match of this page — the site may have changed. Pastes are still reviewed.
+	</p>
+{/if}
+
 {#if $resourceSummary}
 	<div class="resource-summary" data-tone={$resourceSummary.tone} role="status" aria-label="Local AI resource status">
 		<strong>{$resourceSummary.title}</strong>
@@ -48,6 +60,7 @@
 <style>
 	.pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
 	.ai-notice { margin: 8px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
+	.generic-match { margin: 6px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
 	.pill { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: white; color: var(--color-ink); font-size: 11px; }
 	.dot { width: 5px; height: 5px; border-radius: 3px; background: var(--color-success); flex-shrink: 0; }
 	.dot.off, .dot.muted { background: #cbd5e1; }

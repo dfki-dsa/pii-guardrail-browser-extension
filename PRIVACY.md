@@ -179,17 +179,25 @@ you use:
 | Storage key | Contents | Why it is necessary |
 | --- | --- | --- |
 | `pg_settings` | Your preferences (categories, sensitivity, replacement mode, theme, Local AI options, allow/block lists) | To apply your chosen configuration |
-| `pg_entity_maps` | Placeholder ↔ original-value mappings, keyed by conversation URL | To restore original values you replaced |
-| `pg_identity_vault` | Identity vault entries (stable replacements for recurring identities) | To produce consistent replacements across pastes |
+| `pg_conversation_records` | The replacement placeholders used in a conversation, keyed by conversation URL. Placeholders only — no original values | To know which replacements may be restored on a given page |
+| `pg_entity_maps` | Placeholder ↔ original-value mappings, keyed by conversation URL, written by versions up to 0.4.2 only. Kept so conversations from before the change still restore; never added to | To restore original values you replaced before this key was retired |
+| `pg_identity_vault` | Identity vault entries (stable replacements for recurring identities), including the original values | To produce consistent replacements across pastes, and to restore originals |
 | `pg_feedback` | Local correction/feedback records: the corrected item's text, a short excerpt of the text around it, the detected and corrected category, and a timestamp (capped at the last 1000 entries) | To improve your local experience; never uploaded |
 | `pg_system_check` | Result of the local system/compatibility check | To show whether Local AI can run on your device |
 
 **Where it is stored:** locally in your browser profile, on your device. It is **not** collected
 by DFKI.
 
+**With cross-session memory switched off:** no original values are written to local extension
+storage at all. The placeholder ↔ original-value pairs needed to restore what you replaced are
+held in `chrome.storage.session` instead, under `pg_conversation_records`. That area is cleared
+by the browser when the browser session ends, so restoration survives a page reload and moving
+between conversations, and nothing outlives the session.
+
 **Local-storage necessity (§ 25 TDDDG):** the extension uses `chrome.storage.local` only to
 provide functions you explicitly request, including applying your settings, keeping
-placeholder/value mappings for restoration, maintaining stable local replacement identities,
+records of which placeholders a conversation used, maintaining stable local replacement
+identities and the original values they stand for,
 storing local correction records, and showing the local system-compatibility result. This local
 storage is necessary for those requested extension functions. It is not used for tracking,
 analytics, telemetry, advertising, or remote profiling.

@@ -14,9 +14,14 @@ export interface ChipReasonInputs {
   status: SystemCompatibilityStatus | null | undefined;
   nerStatus?: NerStatus | null;
   /**
-   * True once this page could not resolve the site's message box, so a paste
-   * that would have been reviewed went through unreviewed instead. Cleared
+   * True once this page could not find a message box at all — neither the one
+   * the site adapter knows nor the target of the paste itself. Text either
+   * went through unreviewed, or was reviewed and had nowhere to land. Cleared
    * again as soon as a lookup succeeds.
+   *
+   * Not raised for a page the extension is matching generically: protection
+   * held there, and the popup says so quietly. Reserving this for a real
+   * failure is what keeps it meaning one.
    */
   composerMissing?: boolean;
 }
@@ -89,7 +94,7 @@ export function chipReasonMessage(reason: ChipReason): ChipMessage {
     case 'composer-not-found':
       return {
         title: 'Message box not recognized',
-        detail: 'Privacy Guardrail cannot find this page’s message box, so pastes here are not reviewed. Reload the page — if that does not help, the site has changed and the extension needs an update.',
+        detail: 'Privacy Guardrail cannot find this page’s message box, so text here is not reviewed and reviewed text may not be inserted. Reload the page — if that does not help, the site has changed and the extension needs an update.',
       };
     case 'pattern-only':
       return {

@@ -5,7 +5,6 @@ import { GROUP_NAMES, GROUP_DEFAULT_ON } from './category-groups';
 
 const SETTINGS_KEY = 'pg_settings';
 const FEEDBACK_KEY = 'pg_feedback';
-const ENTITY_MAPS_KEY = 'pg_entity_maps';
 
 /** Load extension settings from chrome.storage.local. */
 export async function loadSettings(): Promise<Settings> {
@@ -181,29 +180,257 @@ export async function clearFeedback(): Promise<void> {
   await chrome.storage.local.remove(FEEDBACK_KEY);
 }
 
-/** Entity map storage — keyed by conversation URL. */
+/**
+ * Legacy conversation records, written by versions up to 0.4.2: a plain
+ * `token -> original` object per conversation URL. Read-only from here on.
+ * Nothing migrates them, rewrites them or deletes them — an upgrade that
+ * touched user data to save a lookup would be a poor trade.
+ */
+const LEGACY_ENTITY_MAPS_KEY = 'pg_entity_maps';
+
+/**
+ * Conversation records in the shape this version writes: a list of the
+ * replacement tokens used in one conversation, and nothing else. The same key
+ * is used in `chrome.storage.session`, where a profile with cross-session
+ * memory switched off keeps `token -> original` pairs instead — see
+ * `saveSessionConversationPairs`.
+ */
+const CONVERSATION_RECORDS_KEY = 'pg_conversation_records';
+
+/** Legacy record shape: replacement token → original value. */
 export interface StoredEntityMap {
   [placeholder: string]: string;
 }
 
-/** Save an entity map for a specific conversation URL. */
-export async function saveEntityMap(
-  conversationUrl: string,
-  map: StoredEntityMap
-): Promise<void> {
-  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
-  const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
-  maps[conversationUrl] = { ...maps[conversationUrl], ...map };
-  await chrome.storage.local.set({ [ENTITY_MAPS_KEY]: maps });
+/**
+ * One conversation's record as the resolver needs it, with both shapes
+ * already folded together.
+ *
+ * `tokens` are resolved through the identity vault, which is the sole source
+ * of original values for records written by this version. `originals` carries
+ * the pairs held by records that came with their own — legacy durable records,
+ * and the session records written while cross-session memory is off.
+ */
+export interface ConversationRecord {
+  tokens: string[];
+  originals: StoredEntityMap;
 }
 
-/** Load the entity map for a specific conversation URL. */
-export async function loadEntityMap(
-  conversationUrl: string
-): Promise<StoredEntityMap> {
-  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
-  const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
-  return maps[conversationUrl] || {};
+/** A stored record in either shape. */
+type StoredConversationRecord = string[] | StoredEntityMap;
+
+/**
+ * `chrome.storage.session`, or null where it is unavailable — an older
+ * Chromium, or a test environment that has not mocked it. Session storage is
+ * a convenience here, never the only path that has to work: every caller
+ * degrades to "this conversation is not remembered" rather than failing.
+ */
+function sessionArea(): chrome.storage.StorageArea | null {
+  if (typeof chrome === 'undefined') return null;
+  return chrome.storage?.session ?? null;
+}
+
+async function readRecords(
+  area: chrome.storage.StorageArea | null,
+  key: string,
+): Promise<Record<string, StoredConversationRecord>> {
+  if (!area) return {};
+  try {
+    const result = await area.get(key);
+    const records = result?.[key];
+    return records && typeof records === 'object' ? records : {};
+  } catch {
+    // A storage area that rejects (session storage without the access level
+    // set, a revoked context) must not take restoration down with it.
+    return {};
+  }
+}
+
+/** The replacement tokens a stored record names, in either shape. */
+function tokensOf(record: StoredConversationRecord | undefined): string[] {
+  if (Array.isArray(record)) {
+    return record.filter((token): token is string => typeof token === 'string');
+  }
+  if (record && typeof record === 'object') return Object.keys(record);
+  return [];
+}
+
+/** The `token -> original` pairs a stored record carries, if it carries any. */
+function originalsOf(record: StoredConversationRecord | undefined): StoredEntityMap {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return {};
+  const pairs: StoredEntityMap = {};
+  for (const [token, original] of Object.entries(record)) {
+    if (typeof original === 'string') pairs[token] = original;
+  }
+  return pairs;
+}
+
+/**
+ * Read everything known about one conversation, across every shape and both
+ * storage areas.
+ *
+ * Three writers can have contributed: this version (a token list in
+ * `chrome.storage.local`), this version with cross-session memory off (pairs
+ * in `chrome.storage.session`), and a version up to 0.4.2 (pairs in
+ * `chrome.storage.local` under the old key). All three resolve; none is
+ * rewritten.
+ */
+export async function loadConversationRecord(
+  conversationUrl: string,
+): Promise<ConversationRecord> {
+  const [durable, session, legacy] = await Promise.all([
+    readRecords(chrome.storage.local, CONVERSATION_RECORDS_KEY),
+    readRecords(sessionArea(), CONVERSATION_RECORDS_KEY),
+    readRecords(chrome.storage.local, LEGACY_ENTITY_MAPS_KEY),
+  ]);
+
+  const shapes = [durable[conversationUrl], session[conversationUrl], legacy[conversationUrl]];
+  const tokens = new Set<string>();
+  let originals: StoredEntityMap = {};
+  for (const shape of shapes) {
+    for (const token of tokensOf(shape)) tokens.add(token);
+    originals = { ...originals, ...originalsOf(shape) };
+  }
+
+  return { tokens: [...tokens], originals };
+}
+
+/**
+ * Whether some earlier session already filed a record under this URL.
+ *
+ * This is the one piece of positive proof that a URL change is a conversation
+ * switch rather than a site renaming the conversation it just created: a key
+ * that has been on screen as its own conversation before. It is what clears
+ * the tab ledger, so it must not be inferred from anything softer.
+ */
+export async function conversationRecordExists(conversationUrl: string): Promise<boolean> {
+  const record = await loadConversationRecord(conversationUrl);
+  return record.tokens.length > 0;
+}
+
+/**
+ * File replacement tokens under a conversation, durably.
+ *
+ * No original values are written. The identity vault holds those, and a
+ * record filed against the wrong conversation therefore misdirects the
+ * resolvable set but exposes nothing.
+ */
+export async function saveConversationTokens(
+  conversationUrl: string,
+  tokens: Iterable<string>,
+): Promise<void> {
+  const incoming = [...tokens];
+  if (incoming.length === 0) return;
+
+  const records = await readRecords(chrome.storage.local, CONVERSATION_RECORDS_KEY);
+  const merged = new Set([...tokensOf(records[conversationUrl]), ...incoming]);
+  records[conversationUrl] = [...merged];
+  await chrome.storage.local.set({ [CONVERSATION_RECORDS_KEY]: records });
+}
+
+/**
+ * File `token -> original` pairs for the length of this browser session only.
+ *
+ * Used when cross-session memory is off. The vault is not keeping the
+ * originals, so the record is the only copy — and a setting named for not
+ * remembering across sessions must not leave them in durable storage. Session
+ * storage still survives a reload and a conversation switch, so the setting
+ * costs persistence rather than usability.
+ */
+export async function saveSessionConversationPairs(
+  conversationUrl: string,
+  pairs: StoredEntityMap,
+): Promise<void> {
+  const area = sessionArea();
+  if (!area || Object.keys(pairs).length === 0) return;
+
+  const records = await readRecords(area, CONVERSATION_RECORDS_KEY);
+  records[conversationUrl] = {
+    ...originalsOf(records[conversationUrl]),
+    ...pairs,
+  };
+  try {
+    await area.set({ [CONVERSATION_RECORDS_KEY]: records });
+  } catch {
+    // Restoration in this tab still works from memory; only persistence
+    // across a reload is lost.
+  }
+}
+
+/**
+ * Move replacement tokens from the conversation they were last filed under to
+ * the one they have now been seen in.
+ *
+ * Every supported chat site creates the conversation on the first send and
+ * rewrites the URL in place, so tokens emitted while composing are filed
+ * under the URL being left behind. This is what carries them across — driven
+ * by having observed them rendered at `toUrl`, not by any reading of what the
+ * URL change meant.
+ *
+ * Only the named tokens move, so a second tab composing its own first message
+ * keeps its pending tokens under the shared key untouched. Both storage areas
+ * are swept because the cross-session memory setting can be flipped between a
+ * paste and the send that follows it. Repeating a move that already happened
+ * changes nothing.
+ */
+export async function moveConversationTokens(
+  fromUrl: string,
+  toUrl: string,
+  tokens: Iterable<string>,
+): Promise<void> {
+  const moving = [...tokens];
+  if (moving.length === 0 || fromUrl === toUrl) return;
+
+  await moveWithin(chrome.storage.local, moving, fromUrl, toUrl);
+  await moveWithin(sessionArea(), moving, fromUrl, toUrl);
+}
+
+async function moveWithin(
+  area: chrome.storage.StorageArea | null,
+  tokens: string[],
+  fromUrl: string,
+  toUrl: string,
+): Promise<void> {
+  if (!area) return;
+
+  const records = await readRecords(area, CONVERSATION_RECORDS_KEY);
+  const source = records[fromUrl];
+  const sourceTokens = new Set(tokensOf(source));
+  const present = tokens.filter((token) => sourceTokens.has(token));
+  if (present.length === 0) return;
+
+  const sourcePairs = originalsOf(source);
+  const targetPairs = originalsOf(records[toUrl]);
+  const carriesOriginals = !Array.isArray(source) && Object.keys(sourcePairs).length > 0;
+
+  if (carriesOriginals) {
+    // A pairs-shaped source (session records, or a legacy record read back
+    // into the session area) has to take its originals with it, or the moved
+    // tokens arrive unresolvable.
+    const merged: StoredEntityMap = { ...targetPairs };
+    for (const token of present) merged[token] = sourcePairs[token];
+    records[toUrl] = merged;
+  } else {
+    records[toUrl] = [...new Set([...tokensOf(records[toUrl]), ...present])];
+  }
+
+  const remaining = tokensOf(source).filter((token) => !present.includes(token));
+  if (remaining.length === 0) {
+    delete records[fromUrl];
+  } else if (Array.isArray(source)) {
+    records[fromUrl] = remaining;
+  } else {
+    const kept: StoredEntityMap = {};
+    for (const token of remaining) kept[token] = sourcePairs[token];
+    records[fromUrl] = kept;
+  }
+
+  try {
+    await area.set({ [CONVERSATION_RECORDS_KEY]: records });
+  } catch {
+    // Leaving the tokens filed where they were costs a reveal after reload,
+    // never a wrong one.
+  }
 }
 
 /**
@@ -211,12 +438,11 @@ export async function loadEntityMap(
  * actually emitted into the page.
  *
  * The "new chat" URL is a shared key: every new conversation in every tab
- * files its mappings under it until the site assigns a real one. A session
- * restores that key on load, so its in-memory map can hold entries belonging
- * to other sessions' drafts. Persisting or migrating the map wholesale would
- * carry those originals into this conversation, where its reveal banner
- * would resolve placeholders it never sent. Both writers pass their entries
- * through here so a session only ever stores what it used.
+ * files under it until the site assigns a real one. A session restores that
+ * key on load, so its in-memory map can hold entries belonging to other
+ * sessions' drafts. Filing or persisting the map wholesale would carry those
+ * tokens into this conversation. Every writer passes through here so a
+ * session only ever stores what it used.
  */
 export function ownedEntries(
   map: StoredEntityMap,
@@ -229,51 +455,28 @@ export function ownedEntries(
   return result;
 }
 
-/**
- * Move placeholder mappings recorded before a conversation existed onto the
- * URL the site assigned it.
- *
- * Every supported chat site creates the conversation on the first send and
- * rewrites the URL in place. Anything anonymized while composing is filed
- * under the transient "new chat" URL, so without this the mappings become
- * unreachable the moment the page is reloaded.
- *
- * Only the supplied entries move — the ones this page session actually
- * produced. A second tab composing its own new chat keeps its pending
- * mappings under the transient URL untouched.
- */
-export async function migrateEntityMap(
-  fromUrl: string,
-  toUrl: string,
-  entries: StoredEntityMap,
-): Promise<void> {
-  const keys = Object.keys(entries);
-  if (keys.length === 0 || fromUrl === toUrl) return;
-
-  const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
-  const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
-
-  maps[toUrl] = { ...maps[toUrl], ...entries };
-
-  const source = maps[fromUrl];
-  if (source) {
-    for (const key of keys) {
-      if (source[key] === entries[key]) delete source[key];
-    }
-    if (Object.keys(source).length === 0) delete maps[fromUrl];
-  }
-
-  await chrome.storage.local.set({ [ENTITY_MAPS_KEY]: maps });
-}
-
-/** Clear entity maps for a specific conversation or all conversations. */
+/** Clear conversation records for one conversation, or for all of them. */
 export async function clearEntityMaps(conversationUrl?: string): Promise<void> {
-  if (conversationUrl) {
-    const result = await chrome.storage.local.get(ENTITY_MAPS_KEY);
-    const maps: Record<string, StoredEntityMap> = result[ENTITY_MAPS_KEY] || {};
-    delete maps[conversationUrl];
-    await chrome.storage.local.set({ [ENTITY_MAPS_KEY]: maps });
-  } else {
-    await chrome.storage.local.remove(ENTITY_MAPS_KEY);
+  const areas: Array<[chrome.storage.StorageArea | null, string]> = [
+    [chrome.storage.local, CONVERSATION_RECORDS_KEY],
+    [chrome.storage.local, LEGACY_ENTITY_MAPS_KEY],
+    [sessionArea(), CONVERSATION_RECORDS_KEY],
+  ];
+
+  for (const [area, key] of areas) {
+    if (!area) continue;
+    try {
+      if (!conversationUrl) {
+        await area.remove(key);
+        continue;
+      }
+      const records = await readRecords(area, key);
+      if (records[conversationUrl] === undefined) continue;
+      delete records[conversationUrl];
+      await area.set({ [key]: records });
+    } catch {
+      // Best effort per area; a store that cannot be reached holds nothing
+      // this call could have removed anyway.
+    }
   }
 }

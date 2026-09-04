@@ -1,0 +1,22 @@
+<div id="claude-root">
+  <main>
+    <!-- assistant turn -->
+    <div data-test-render-count="1">
+      <div class="font-user-message"><p>A synthetic question.</p></div>
+    </div>
+    <div data-is-streaming="false">
+      <div class="font-claude-message">
+        <p>A synthetic reply mentioning [PERSON_1].</p>
+      </div>
+    </div>
+    <!-- composer -->
+    <fieldset>
+      <div
+        class="ProseMirror"
+        contenteditable="true"
+        role="textbox"
+        aria-label="Write your prompt to Claude"><p></p></div>
+      <button aria-label="Send message">Send</button>
+    </fieldset>
+  </main>
+</div>

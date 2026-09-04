@@ -1,13 +1,8 @@
 import type { SiteAdapter } from './adapter-interface';
-import { insertTextCompat, urlPath } from './adapter-interface';
+import { insertTextCompat } from './adapter-interface';
 
 export class ClaudeAdapter implements SiteAdapter {
   readonly name = 'Claude';
-
-  hasConversationId(url: string): boolean {
-    // claude.ai/new -> claude.ai/chat/<uuid> after the first send.
-    return /^\/chat\/[^/]+/.test(urlPath(url));
-  }
 
   getInputElement(): HTMLElement | null {
     return (
