@@ -37,8 +37,9 @@ export interface ResolverMatch {
    *  synthetic matches the entity-map layer does not currently track type
    *  so we fall back to `'misc'`. */
   styleKey: string;
-  /** Discriminator on how the match was found. Useful for tests and for
-   *  future surfaces that want to render the two kinds differently. */
+  /** Discriminator on what was matched: a typed placeholder or a synthetic
+   *  stand-in. Useful for tests and for surfaces that want to render the two
+   *  kinds differently. */
   kind: 'placeholder' | 'synthetic';
 }
 
@@ -73,29 +74,51 @@ function hasWordBoundary(haystack: string, start: number, end: number): boolean 
   return startBoundary && endBoundary;
 }
 
+/** Per-call narrowing of how individual keys may be matched. */
+export interface ResolveOptions {
+  /**
+   * Keys that may only be matched in their exact stored form.
+   *
+   * Tolerance is what the conversation scope pays for: a token admitted
+   * because it was seen unaltered on the page carries no evidence that this
+   * conversation ever used it, so `person 7` in ordinary prose must not
+   * resolve against it. Such keys are matched literally instead, on a
+   * whole-word boundary, like a synthetic value.
+   */
+  strictOnly?: ReadonlySet<string>;
+}
+
 /**
  * Resolve every placeholder + synthetic-echo present in `text` against
  * `entityMap`. Pass order:
  *
  *   1. Tolerant placeholder pass (canonical + mangled variants), gated by
  *      the entity map's known canonical placeholders. Highest precedence.
- *   2. Synthetic pass over EntityMap keys that are NOT canonical
- *      placeholders. Whole-word boundary, longest-needle-first so
- *      "Jordan Park" wins over "Jordan" if both were ever mapped.
- *      Synthetics that overlap a placeholder match are dropped.
+ *   2. Literal pass over the remaining keys — synthetic values, and any
+ *      placeholder restricted to strict form by `options.strictOnly`.
+ *      Whole-word boundary, longest-needle-first so "Jordan Park" wins over
+ *      "Jordan" if both were ever mapped. Matches that overlap a pass-1
+ *      match are dropped.
  *
  * Returned matches are sorted by `start` and are non-overlapping, so a
  * caller can apply them left-to-right as substitutions without further
  * bookkeeping.
  */
-export function resolveText(text: string, entityMap: EntityMap): ResolveResult {
+export function resolveText(
+  text: string,
+  entityMap: EntityMap,
+  options: ResolveOptions = {},
+): ResolveResult {
   const matches: ResolverMatch[] = [];
+  const strictOnly = options.strictOnly;
+  const isTolerant = (key: string): boolean =>
+    isPlaceholderKey(key) && !strictOnly?.has(key);
 
   // Pass 1 — placeholders, tolerant of LLM mangling.
   const knownPlaceholders = entityMap
     .entries()
     .map(([key]) => key)
-    .filter(isPlaceholderKey);
+    .filter(isTolerant);
   const variantMatches = findVariantMatches(text, knownPlaceholders);
   for (const vm of variantMatches) {
     const original = entityMap.getOriginal(vm.canonical);
@@ -111,15 +134,17 @@ export function resolveText(text: string, entityMap: EntityMap): ResolveResult {
     });
   }
 
-  // Pass 2 — synthetic echoes. Sort longest-key first so that "Jordan Park"
-  // is matched before "Jordan" when both happen to be mapped.
-  const syntheticEntries = entityMap
+  // Pass 2 — literal echoes: synthetic values, plus placeholders held to
+  // strict form. Sort longest-key first so that "Jordan Park" is matched
+  // before "Jordan" when both happen to be mapped.
+  const literalEntries = entityMap
     .entries()
-    .filter(([key]) => !isPlaceholderKey(key))
+    .filter(([key]) => !isTolerant(key))
     .sort((a, b) => b[0].length - a[0].length);
 
-  for (const [key, original] of syntheticEntries) {
+  for (const [key, original] of literalEntries) {
     if (!key) continue;
+    const parsed = parsePlaceholder(key);
     const re = new RegExp(escapeRegExp(key), 'g');
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
@@ -133,8 +158,8 @@ export function resolveText(text: string, entityMap: EntityMap): ResolveResult {
         end,
         matchText: key,
         originalText: original,
-        styleKey: 'misc',
-        kind: 'synthetic',
+        styleKey: parsed ? parsed.type.toLowerCase() : 'misc',
+        kind: parsed ? 'placeholder' : 'synthetic',
       });
       // Re-anchor past the inserted region so we don't loop on zero-width
       // matches if the needle were ever empty (defensive).

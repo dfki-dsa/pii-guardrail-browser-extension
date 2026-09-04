@@ -1,7 +1,18 @@
 /** @jest-environment jsdom */
 
 import { EntityMap } from '../../src/shared/entity-map';
-import { attachDeAnonBanner } from '../../src/ui/banner/de-anon-banner';
+import { resolveText } from '../../src/shared/placeholder-resolver';
+import { attachDeAnonBanner, type TokenResolver } from '../../src/ui/banner/de-anon-banner';
+
+/**
+ * The banner is handed a resolver rather than a map of what is resolvable,
+ * and asks it again on every render and every click. The conversation scope
+ * grows while a page is open, and a banner answering from a snapshot taken
+ * when it attached would understate what the user can actually recover.
+ */
+function resolverFor(entityMap: EntityMap): TokenResolver {
+  return (text) => resolveText(text, entityMap);
+}
 
 describe('attachDeAnonBanner', () => {
   const originalAttachShadow = HTMLElement.prototype.attachShadow;
@@ -59,7 +70,7 @@ describe('attachDeAnonBanner', () => {
 
     const originalMarkup = responseElement.innerHTML;
 
-    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, resolverFor(entityMap), { readFormControls: true });
 
     const host = container.firstElementChild as HTMLElement;
     const shadow = host.shadowRoot;
@@ -134,7 +145,7 @@ describe('attachDeAnonBanner', () => {
     container.appendChild(responseElement);
     document.body.appendChild(container);
 
-    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, resolverFor(entityMap));
 
     const host = container.firstElementChild as HTMLElement;
     expect(host.shadowRoot).not.toBeNull();
@@ -175,7 +186,7 @@ describe('attachDeAnonBanner', () => {
     container.appendChild(responseElement);
     document.body.appendChild(container);
 
-    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, resolverFor(entityMap), { readFormControls: true });
 
     const host = container.firstElementChild as HTMLElement;
     expect(host.shadowRoot).not.toBeNull();
@@ -229,12 +240,12 @@ describe('attachDeAnonBanner', () => {
     // A streaming response inspected before any placeholder has arrived.
     // Marking the element as handled here used to suppress the banner for
     // good, so the reply never became revealable.
-    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, resolverFor(entityMap));
     expect(document.querySelector('.pg-deanon-host')).toBeNull();
     expect(responseElement.dataset.pgBanner).toBeUndefined();
 
     responseElement.textContent = 'Reply about [PERSON_1]';
-    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, resolverFor(entityMap));
 
     expect(document.querySelectorAll('.pg-deanon-host')).toHaveLength(1);
     expect(responseElement.dataset.pgBanner).toBe('attached');
@@ -262,7 +273,7 @@ describe('attachDeAnonBanner', () => {
     container.appendChild(responseElement);
     document.body.appendChild(container);
 
-    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, resolverFor(entityMap));
     const revealBtn = (container.firstElementChild as HTMLElement).shadowRoot
       ?.getElementById('pg-reveal-btn') as HTMLButtonElement;
     revealBtn.click();
@@ -283,9 +294,118 @@ describe('attachDeAnonBanner', () => {
     responseElement.textContent = 'Reply about [PERSON_1]';
     document.body.append(responseElement);
 
-    attachDeAnonBanner(responseElement, entityMap);
-    attachDeAnonBanner(responseElement, entityMap);
+    attachDeAnonBanner(responseElement, resolverFor(entityMap));
+    attachDeAnonBanner(responseElement, resolverFor(entityMap));
 
     expect(document.querySelectorAll('.pg-deanon-host')).toHaveLength(1);
+  });
+
+  describe('never annotates something the user types into', () => {
+    it('refuses a contenteditable target', () => {
+      // Revealing replaces the subtree it annotates. Doing that to a message
+      // box would write original values into text about to be sent.
+      const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+      const composer = document.createElement('div');
+      composer.setAttribute('contenteditable', 'true');
+      composer.textContent = 'Draft about [PERSON_1]';
+      document.body.append(composer);
+
+      expect(attachDeAnonBanner(composer, resolverFor(entityMap))).toBeNull();
+      expect(document.querySelector('.pg-deanon-host')).toBeNull();
+    });
+
+    it('refuses a target nested inside an editable region', () => {
+      const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+      const composer = document.createElement('div');
+      composer.setAttribute('contenteditable', 'true');
+      const line = document.createElement('p');
+      line.textContent = 'Draft about [PERSON_1]';
+      composer.append(line);
+      document.body.append(composer);
+
+      expect(attachDeAnonBanner(line, resolverFor(entityMap))).toBeNull();
+    });
+  });
+
+  describe('reads form controls only where it is told to', () => {
+    function artifactReply(): HTMLElement {
+      const responseElement = document.createElement('div');
+      responseElement.innerHTML = '<p>Draft attached.</p><textarea></textarea>';
+      (responseElement.querySelector('textarea') as HTMLTextAreaElement).value =
+        'Dear [PERSON_1],';
+      document.body.append(responseElement);
+      return responseElement;
+    }
+
+    it('counts a token inside an artifact card in a matched turn', () => {
+      const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+
+      const banner = attachDeAnonBanner(artifactReply(), resolverFor(entityMap), {
+        readFormControls: true,
+      });
+
+      expect(banner).not.toBeNull();
+    });
+
+    it('reads inert text only when it attached on a generic match', () => {
+      // Nobody vouched for this markup, so a form control here could be any
+      // field on the page rather than the reply's own artifact card.
+      const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+
+      expect(attachDeAnonBanner(artifactReply(), resolverFor(entityMap))).toBeNull();
+    });
+  });
+
+  describe('follows the scope rather than a snapshot of it', () => {
+    function growingScope(): {
+      resolve: TokenResolver;
+      grow: () => void;
+    } {
+      let entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+      return {
+        resolve: (text) => resolveText(text, entityMap),
+        grow: () => {
+          entityMap = new EntityMap({
+            '[PERSON_1]': 'Lukas Wagner',
+            '[EMAIL_2]': 'lukas@example.test',
+          });
+        },
+      };
+    }
+
+    it('updates the count when the scope grows after it attached', () => {
+      const { resolve, grow } = growingScope();
+      const responseElement = document.createElement('div');
+      responseElement.textContent = 'Write to [PERSON_1] at [EMAIL_2].';
+      document.body.append(responseElement);
+
+      const banner = attachDeAnonBanner(responseElement, resolve);
+      const host = document.querySelector('.pg-deanon-host') as HTMLElement;
+      const countText = (): string =>
+        host.shadowRoot?.querySelector('.pg-banner-text')?.textContent ?? '';
+      expect(countText()).toContain('1 replaced item');
+
+      grow();
+      banner?.refresh();
+
+      expect(countText()).toContain('2 replaced items');
+    });
+
+    it('reveals against what is known at click time, not at attach time', () => {
+      const { resolve, grow } = growingScope();
+      const responseElement = document.createElement('div');
+      responseElement.textContent = 'Write to [PERSON_1] at [EMAIL_2].';
+      document.body.append(responseElement);
+
+      attachDeAnonBanner(responseElement, resolve);
+      grow();
+
+      const host = document.querySelector('.pg-deanon-host') as HTMLElement;
+      (host.shadowRoot?.getElementById('pg-reveal-btn') as HTMLButtonElement).click();
+
+      const overlay = responseElement.querySelector('.pg-deanon-overlay-container');
+      expect(overlay?.textContent).toContain('lukas@example.test');
+      expect(overlay?.textContent).not.toContain('[EMAIL_2]');
+    });
   });
 });

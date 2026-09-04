@@ -1,7 +1,11 @@
 /** @jest-environment jsdom */
 
 import { ChatGptAdapter } from '../../src/content/site-adapters/chatgpt-adapter';
-import { PasteInterceptor, type PasteInterceptorCallbacks } from '../../src/content/paste-interceptor';
+import {
+  PasteInterceptor,
+  type ComposerMatch,
+  type PasteInterceptorCallbacks,
+} from '../../src/content/paste-interceptor';
 import { DEFAULT_SETTINGS } from '../../src/shared/constants';
 import { deriveChipReason } from '../../src/shared/page-status-chip-reason';
 import type { SystemCompatibilityStatus } from '../../src/shared/message-types';
@@ -173,40 +177,46 @@ describe('PasteInterceptor on the current ChatGPT client', () => {
     interceptor.stop();
   });
 
-  it('reports a page whose composer no adapter selector matches', () => {
+  it('reviews and reports a page whose composer no adapter selector matches', () => {
     // The pre-#32 world in miniature: a real message box wearing markup this
-    // adapter knows nothing about. The paste goes through unreviewed either
-    // way — what must not happen again is that it goes through unnoticed.
+    // adapter knows nothing about. The paste used to go through unreviewed;
+    // now the target itself is taken as the message box, and the page says so
+    // rather than presenting the guess as a healthy match.
     document.body.innerHTML = `
       <main>
         <div data-message-role="assistant">hi</div>
         <form><textarea data-composer-shape-we-have-never-seen></textarea></form>
       </main>`;
     const composer = document.querySelector('textarea') as HTMLTextAreaElement;
-    let composerMissing = false;
+    const seen: ComposerMatch[] = [];
     const callbacks = {
       ...makeCallbacks(),
-      onComposerLookup: (found: boolean) => {
-        composerMissing = !found;
+      onComposerLookup: (match: ComposerMatch) => {
+        seen.push(match);
       },
     };
     const interceptor = new PasteInterceptor(new ChatGptAdapter(), callbacks);
     interceptor.start();
 
-    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    const paste = new Event('paste', {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    }) as ClipboardEvent;
     Object.defineProperty(paste, 'clipboardData', {
       value: { getData: () => PASTE_TEXT },
     });
     composer.dispatchEvent(paste);
 
-    expect(paste.defaultPrevented).toBe(false);
-    expect(callbacks.onAnalyzing).not.toHaveBeenCalled();
-    // Nothing about the system is degraded, so without this signal the page
-    // would carry no chip at all while offering no protection.
+    expect(paste.defaultPrevented).toBe(true);
+    expect(seen).toEqual(['generic']);
+    // Nothing about the system is degraded, and protection held, so the chip
+    // stays clear — the degraded state is the popup's quiet line, not the
+    // warning reserved for pastes that really were not reviewed.
     expect(deriveChipReason({ status: healthySystem })).toBeNull();
-    expect(deriveChipReason({ status: healthySystem, composerMissing })).toBe(
-      'composer-not-found',
-    );
+    expect(
+      deriveChipReason({ status: healthySystem, composerMissing: seen.includes('none') }),
+    ).toBeNull();
 
     interceptor.stop();
   });

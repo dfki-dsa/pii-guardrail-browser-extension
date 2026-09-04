@@ -658,6 +658,34 @@ async function handleMessage(
   }
 }
 
+/**
+ * Let content scripts reach `chrome.storage.session`.
+ *
+ * Session storage is where conversation records go for a profile with
+ * cross-session memory switched off: the pairs are the only copy of those
+ * originals, and a setting named for not remembering across sessions must not
+ * leave them in durable storage. Content scripts are untrusted contexts and
+ * cannot read that area until this is set, and the access level does not
+ * survive a service-worker restart, so it is set from module scope rather
+ * than from an install hook.
+ *
+ * Nothing depends on this succeeding — a profile where it fails keeps
+ * restoration for the life of the page and loses it on reload.
+ */
+function allowContentScriptSessionStorage(): void {
+  const session = chrome.storage?.session as
+    | (chrome.storage.StorageArea & {
+        setAccessLevel?: (options: { accessLevel: string }) => Promise<void>;
+      })
+    | undefined;
+  if (!session?.setAccessLevel) return;
+  void session
+    .setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" })
+    .catch(() => undefined);
+}
+
+allowContentScriptSessionStorage();
+
 /** Initialize default settings on install. */
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await loadSettings();

@@ -17,6 +17,8 @@ async function setupHarness(opts: {
   settings?: Partial<Settings>;
   systemStatus: SystemCompatibilityStatus | null;
   handle?: SendMessageHandler;
+  /** What the active supported page answers about its message box, if any. */
+  pageProtection?: { composerMatch: 'adapter' | 'generic' | 'none' | null } | 'no-page';
 }): Promise<Harness> {
   jest.resetModules();
   const store: Record<string, unknown> = {
@@ -63,8 +65,17 @@ async function setupHarness(opts: {
       openOptionsPage: jest.fn(),
     },
     tabs: {
-      query: jest.fn().mockResolvedValue([]),
+      query: jest.fn().mockResolvedValue(
+        opts.pageProtection === undefined ? [] : [{ id: 7 }],
+      ),
       create: jest.fn(),
+      sendMessage: jest.fn(async () => {
+        if (opts.pageProtection === undefined || opts.pageProtection === 'no-page') {
+          // A tab with no content script never answers.
+          throw new Error('Receiving end does not exist.');
+        }
+        return { type: 'PAGE_PROTECTION_STATE', payload: opts.pageProtection };
+      }),
     },
   };
 
@@ -97,6 +108,37 @@ function okStatus(overrides: Partial<SystemCompatibilityStatus> = {}): SystemCom
     ...overrides,
   };
 }
+
+describe('createAppModels — page protection state', () => {
+  test('reports that the page is being matched generically', async () => {
+    // User story 12: the extension says when it is running on a generic match
+    // of the page, so the user can tell that something about the site changed.
+    await setupHarness({ systemStatus: okStatus(), pageProtection: { composerMatch: 'generic' } });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    expect(get(app.protection.composerMatch)).toBe('generic');
+  });
+
+  test('says nothing when the adapter is matching the page', async () => {
+    await setupHarness({ systemStatus: okStatus(), pageProtection: { composerMatch: 'adapter' } });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    expect(get(app.protection.composerMatch)).toBe('adapter');
+  });
+
+  test('says nothing about a tab that cannot answer', async () => {
+    await setupHarness({ systemStatus: okStatus(), pageProtection: 'no-page' });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    expect(get(app.protection.composerMatch)).toBeNull();
+  });
+});
 
 describe('createAppModels — resource-safe popup', () => {
   test('opens public support and legal links in new tabs', async () => {

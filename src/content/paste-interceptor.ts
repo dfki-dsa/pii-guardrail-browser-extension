@@ -2,6 +2,7 @@ import type { SiteAdapter } from './site-adapters/adapter-interface';
 import { isTextFormControl } from './site-adapters/adapter-interface';
 import type {
   CancelDetectionRequest,
+  ComposerMatchState,
   DetectPiiRequest,
   DetectionCanceledResponse,
   PiiResultResponse,
@@ -29,6 +30,18 @@ function isExtensionReloadError(message: string): boolean {
 
 export type CanceledPasteDecision = 'paste-original' | 'drop';
 
+/**
+ * How this page's message box was found for a paste.
+ *
+ * `adapter` — the site adapter resolved it, the intended case.
+ * `generic` — the adapter did not, and the paste target itself was taken as
+ *   the message box. Protection held; what the adapter knows about this site
+ *   has gone stale.
+ * `none` — neither. Text reached the page unreviewed, or reviewed text had
+ *   nowhere to land.
+ */
+export type ComposerMatch = ComposerMatchState;
+
 export interface PasteInterceptorCallbacks {
   onAnalyzing: () => void;
   onNoPii: (text: string) => void;
@@ -37,19 +50,15 @@ export interface PasteInterceptorCallbacks {
   onCanceled: (explicitUserCancel?: boolean) => void;
   onExplicitCancelDecision?: (text: string) => Promise<CanceledPasteDecision> | CanceledPasteDecision;
   /**
-   * Reports whether the site adapter still resolves the page's message box.
+   * Reports how the page's message box was found, each time it matters.
    *
-   * `false` says protection just failed silently: either a paste this
-   * interceptor would have reviewed fell through unreviewed, or reviewed text
-   * had nowhere to be inserted. `true` says a lookup succeeded and clears
-   * that state — a supported site can stop matching for one route or one
-   * moment of a page's build and match again afterwards.
-   *
-   * Deliberately asymmetric: a successful lookup is proof on its own, while a
-   * failed one is only reported for a paste that mattered (see
-   * `reportUnattachedPaste`).
+   * `adapter` is proof on its own and clears any standing warning — a
+   * supported site can stop matching for one route or one moment of a page's
+   * build and match again afterwards. The other two are only reported for a
+   * paste that mattered: enough text to have been reviewed, aimed at
+   * something that could have accepted it.
    */
-  onComposerLookup?: (found: boolean) => void;
+  onComposerLookup?: (match: ComposerMatch) => void;
 }
 
 export interface PasteInterceptorOptions {
@@ -134,19 +143,40 @@ export class PasteInterceptor {
   private handlePaste = (event: ClipboardEvent): void => {
     if (!this.enabled) return;
 
-    const inputElement = this.adapter.getInputElement();
-    if (!inputElement) {
-      this.reportUnattachedPaste(event);
+    const target = composedTarget(event);
+    const adapterInput = this.adapter.getInputElement();
+
+    // A successful lookup is evidence about the adapter regardless of where
+    // this paste is aimed, so it is reported before anything else and clears
+    // a standing warning even for a paste this interceptor will ignore.
+    if (adapterInput) this.callbacks.onComposerLookup?.('adapter');
+
+    const adapterOwnsTarget =
+      !!adapterInput && (adapterInput === target || adapterInput.contains(target as Node | null));
+
+    let inputElement: HTMLElement;
+    let degraded = false;
+
+    if (adapterOwnsTarget) {
+      inputElement = adapterInput as HTMLElement;
+    } else if (isPlausibleComposerTarget(target)) {
+      // The adapter either found nothing or found something this paste is not
+      // going into. Both are the same situation from here: a plausible
+      // message box in front of us that the adapter does not vouch for.
+      // Taking it is what keeps a vendor redesign from leaving pastes
+      // unreviewed; saying so is what keeps that invisible from being fine.
+      inputElement = editableHostOf(target) ?? (target as HTMLElement);
+      degraded = true;
+    } else {
+      // A stray Ctrl+V, or a paste into a search or settings field. Neither
+      // says anything about this page's message box.
       return;
     }
-    this.callbacks.onComposerLookup?.(true);
-
-    // Only intercept pastes into the chat input
-    const target = event.target as HTMLElement;
-    if (!inputElement.contains(target) && target !== inputElement) return;
 
     const text = event.clipboardData?.getData('text/plain');
     if (!text || text.length < MIN_PASTE_LENGTH) return;
+
+    if (degraded) this.callbacks.onComposerLookup?.('generic');
 
     // Save the current cursor/selection before preventing default —
     // this lets us insert at the right position after async detection.
@@ -175,27 +205,6 @@ export class PasteInterceptor {
 
     void this.processPaste(text);
   };
-
-  /**
-   * Report a paste that fell through because the adapter resolved no message
-   * box — the failure mode that made the signed-out ChatGPT build (#32)
-   * invisible: the page looked protected while every paste went unreviewed.
-   *
-   * Restricted to pastes this interceptor would otherwise have taken: a
-   * target that could plausibly have been the message box, and enough text to
-   * clear `MIN_PASTE_LENGTH`. With no composer resolved there is nothing to
-   * run the usual containment check against, and this drives a warning the
-   * user sees, so the target itself has to carry the judgement.
-   */
-  private reportUnattachedPaste(event: ClipboardEvent): void {
-    if (!this.callbacks.onComposerLookup) return;
-    if (!isPlausibleComposerTarget(event.target)) return;
-
-    const text = event.clipboardData?.getData('text/plain');
-    if (!text || text.length < MIN_PASTE_LENGTH) return;
-
-    this.callbacks.onComposerLookup(false);
-  }
 
   private async processPaste(text: string): Promise<void> {
     try {
@@ -342,29 +351,61 @@ export class PasteInterceptor {
   }
 
   /**
-   * Insert into the message box, reporting the lookup either way.
+   * Insert into the message box the paste came from.
    *
-   * A message box that disappears between the paste and this insert takes the
-   * user's text with it — the review ran, and its result lands nowhere. That
-   * used to be a bare `if (input)` with no else, which is the same silence
-   * this signal exists to end.
+   * The target comes from the selection saved at paste time, not from a fresh
+   * adapter lookup. Review is asynchronous, and asking the adapter again
+   * afterwards means the insert can land somewhere else than the text was
+   * taken from — or nowhere, if the adapter has stopped matching in between,
+   * which is exactly when reviewed text must not be dropped.
+   *
+   * The adapter is consulted only when there is no saved selection, which is
+   * an insert with no paste behind it.
    */
   private insertIntoComposer(text: string): void {
-    const input = this.adapter.getInputElement();
+    const input = this.savedSelection?.inputElement ?? this.adapter.getInputElement();
     if (!input) {
-      this.callbacks.onComposerLookup?.(false);
+      // The review ran and its result has nowhere to land. That used to be a
+      // bare `if (input)` with no else, which is the same silence this signal
+      // exists to end.
+      this.callbacks.onComposerLookup?.('none');
       return;
     }
 
-    this.callbacks.onComposerLookup?.(true);
     this.restoreSelection();
     this.adapter.insertText(input, text);
   }
 }
 
 /**
- * True when this paste target could have been the message box we failed to
- * find — the precondition for reading a failed lookup as a real fall-through.
+ * The paste's real target.
+ *
+ * `event.target` is retargeted at the shadow host for a composer inside a
+ * shadow root, which reads as "the message box is missing" when it is merely
+ * encapsulated. `composedPath()[0]` is the node the user actually typed into.
+ */
+function composedTarget(event: ClipboardEvent): EventTarget | null {
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+  return path[0] ?? event.target;
+}
+
+/**
+ * The editable element `target` belongs to: itself for a form control, the
+ * `contenteditable` host for a node inside a rich editor. Insertion has to
+ * address the host, not the paragraph the caret happened to be in.
+ */
+function editableHostOf(target: EventTarget | null): HTMLElement | null {
+  const element = target as HTMLElement | null;
+  if (!element || typeof element.closest !== 'function') return null;
+  if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') return element;
+  return element.closest<HTMLElement>(
+    '[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"]',
+  ) ?? (element.isContentEditable ? element : null);
+}
+
+/**
+ * True when this paste target could plausibly be this page's message box —
+ * the precondition for taking a paste the adapter did not vouch for.
  *
  * Two things are excluded. A target that accepts no text at all: a stray
  * Ctrl+V outside any field still reaches this listener, and says nothing
@@ -384,5 +425,7 @@ function isPlausibleComposerTarget(target: EventTarget | null): boolean {
   // host — but it is not implemented everywhere the tests run, so the
   // attribute lookup backs it up.
   if (element.isContentEditable) return true;
-  return element.closest('[contenteditable=""],[contenteditable="true"]') !== null;
+  return element.closest(
+    '[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"]',
+  ) !== null;
 }

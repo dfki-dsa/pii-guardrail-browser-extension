@@ -1,0 +1,25 @@
+<div id="__next">
+  <main>
+    <!-- assistant turn -->
+    <article data-testid="conversation-turn-1">
+      <div data-message-author-role="user"><div>A synthetic question.</div></div>
+    </article>
+    <article data-testid="conversation-turn-2">
+      <div data-message-author-role="assistant">
+        <div class="markdown">
+          <p>A synthetic reply mentioning [PERSON_1].</p>
+        </div>
+      </div>
+    </article>
+    <!-- composer -->
+    <form>
+      <div
+        id="prompt-textarea"
+        class="ProseMirror"
+        contenteditable="true"
+        role="textbox"
+        translate="no"><p></p></div>
+      <button data-testid="send-button">Send</button>
+    </form>
+  </main>
+</div>

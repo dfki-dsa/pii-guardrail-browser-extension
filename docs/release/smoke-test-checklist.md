@@ -63,6 +63,48 @@ Run at least one validation pass with Local AI unavailable or disabled, if the b
 - Pattern-based detection still works for obvious synthetic values.
 - The user can make an informed paste decision.
 
+## Restoration And Site-Adapter Checks
+
+Restoration no longer depends on knowing each site's conversation addresses,
+and every fallback that replaced that knowledge succeeds quietly — see
+`docs/adr/0001-conversation-scope-from-evidence.md`. Nothing in the field
+reports that a site has moved, so these checks are where it is caught.
+
+### Refresh the captured DOM fixtures
+
+Before tagging, refresh `tests/fixtures/site-dom/` from a live page on each
+supported site and run `npm test`. The procedure and the redaction rules are
+in `tests/fixtures/site-dom/README.md`. Record the capture date and client
+build in the table there.
+
+A fixture that no longer matches is the signal to update the adapter. A
+fixture that still matches is the only evidence a release has that the
+adapters are current.
+
+### Diagnostic probes
+
+Run these with **Debug** enabled in extension settings, on each supported
+site, with the page console open. All of them exist today; the point of the
+pass is that a release looks at them.
+
+1. Paste and accept a replacement in a new chat, then send. Confirm a debug
+   line reporting tokens moved to the conversation's new address.
+2. Reload the page. Confirm the reveal banner still offers the same count.
+3. Switch to another conversation and back. Confirm a debug line reporting the
+   tab ledger cleared on the switch, and that the reveal banner returns.
+4. Set the console to show **Verbose** and look for
+   `is on this page but no original is known for it`. Any such line names a
+   placeholder the user can see and the extension will not resolve.
+5. Open the popup on each site. Confirm it does **not** show the generic-match
+   line — that line means the site's markup has moved and the adapter needs
+   updating before release.
+6. Confirm the page status chip shows no "Message box not recognized" state
+   after a paste on any supported site.
+7. Check the page console for new extension errors across all of the above.
+
+Record any site where step 5 or 6 fires: that is adapter rot, and it ships as
+degraded protection unless the adapter is fixed first.
+
 ## Local AI Release Readiness Matrix
 
 These checks are blockers for the public beta and pair with the automated

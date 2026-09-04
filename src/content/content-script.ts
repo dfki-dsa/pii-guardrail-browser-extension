@@ -12,13 +12,19 @@ import { ChatGptAdapter } from './site-adapters/chatgpt-adapter';
 import { ClaudeAdapter } from './site-adapters/claude-adapter';
 import { GeminiAdapter } from './site-adapters/gemini-adapter';
 import { GenericAdapter } from './site-adapters/generic-adapter';
-import { PasteInterceptor } from './paste-interceptor';
+import { PasteInterceptor, type ComposerMatch } from './paste-interceptor';
 import { sendRuntimeMessageBestEffort } from './runtime-messaging';
 import { shouldShowCriticalLocalAiModal } from './critical-local-ai-modal-status';
 import { ResponseObserver } from './response-observer';
-import { conversationStillOnPage } from './conversation-continuity';
+import { ConversationFiler } from './conversation-filing';
+import { findLooseTokenAnchors } from './banner-anchor';
+import {
+  observedTokens,
+  readTranscriptText,
+  visibleTokens,
+} from './transcript-scan';
+import { isInEditableRegion } from '../ui/shared/editable-region';
 import { ClipboardInterceptor } from './clipboard-interceptor';
-import { resolveText } from '../shared/placeholder-resolver';
 import { ReviewOverlay } from '../ui/overlay/overlay';
 import { ScanningIndicator } from '../ui/scanning-indicator/scanning-indicator';
 import { CancelDecisionDialog } from '../ui/cancel-decision-dialog/cancel-decision-dialog';
@@ -26,18 +32,25 @@ import { CriticalLocalAiModal } from '../ui/critical-local-ai-modal/critical-loc
 import { PageStatusChip } from '../ui/page-status-chip/page-status-chip';
 import { chipReasonMessageForStatus, deriveChipReason } from '../shared/page-status-chip-reason';
 import { SYSTEM_CHECK_STORAGE_KEY } from '../shared/system-check-storage';
-import { attachDeAnonBanner } from '../ui/banner/de-anon-banner';
+import { attachDeAnonBanner, type AttachedBanner } from '../ui/banner/de-anon-banner';
 import { anonymize, anonymizeWithVault } from '../shared/anonymizer';
 import { EntityMap } from '../shared/entity-map';
-import { augmentEntityMap } from '../shared/entity-map-augment';
+import {
+  buildConversationScope,
+  emptyScope,
+  type ConversationScope,
+} from '../shared/conversation-scope';
 import {
   loadSettings,
   saveSettings,
-  loadEntityMap,
-  saveEntityMap,
-  migrateEntityMap,
+  loadConversationRecord,
+  saveConversationTokens,
+  saveSessionConversationPairs,
+  moveConversationTokens,
+  conversationRecordExists,
   ownedEntries,
   logFeedback,
+  type ConversationRecord,
 } from '../shared/storage';
 import { findConflictingPattern } from '../shared/list-conflicts';
 import {
@@ -61,7 +74,7 @@ import {
 } from '../shared/feedback';
 import { prepareReviewSpans } from './review-spans';
 import { resolveThreshold } from '../shared/sensitivity-resolver';
-import { CONVERSATION_URL_POLL_MS, LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, CHIP_FADE_MS } from '../shared/constants';
+import { CONVERSATION_URL_POLL_MS, LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, RESPONSE_DEBOUNCE_MS, CHIP_FADE_MS } from '../shared/constants';
 import type { PiiSpan, FeedbackEntry, Settings, AllowlistEntry, CancelDetectionBehavior, NerStatus, NerStatusResponse, SystemCompatibilityStatus, SystemCompatibilityStatusResponse } from '../shared/message-types';
 
 // --- Adapter selection ---
@@ -87,32 +100,45 @@ let entityMap = new EntityMap();
 let settings: Settings;
 let adaptiveThresholds: Record<string, number> = {};
 /**
- * Storage key for this conversation's placeholder mappings.
+ * Storage key for the conversation on screen.
  *
  * Not a constant: chat sites create the conversation on the first send and
  * rewrite the URL in place, and users switch conversations without a page
- * load. `watchConversationUrl` keeps this current and moves or reloads the
- * mappings to match.
+ * load. `watchConversationUrl` keeps it current. Nothing reads meaning into
+ * how a URL is shaped — what a change meant is never asked.
  */
 let conversationUrl = normalizeConversationUrl(window.location.href);
 
 /**
- * Replacement tokens this page session has actually emitted into the page.
+ * The tab ledger: replacement tokens this page session emitted into a
+ * composer.
  *
- * The in-memory map is restored from storage on load, and on the "new chat"
- * screen that key is shared with every other tab composing its own first
- * message. Persisting the map wholesale would file those other sessions'
- * originals under this conversation. Only what this session used is written
- * back — see `ownedEntries`.
+ * The in-memory map can hold entries restored from storage, and on the "new
+ * chat" screen that key is shared with every other tab composing its own
+ * first message. Only what this session used is ever filed or persisted —
+ * see `ownedEntries`.
  */
 const sessionPlaceholders = new Set<string>();
 
+/** What storage knows about the conversation on screen. */
+let conversationRecord: ConversationRecord = { tokens: [], originals: {} };
+
+/** Unaltered, vault-known tokens last seen on the page. */
+let observedOnPage: string[] = [];
+
 /**
- * Guards against overlapping conversation loads. A storage read started for
- * one conversation can resolve after a later one's, and the loser must not
- * install its map over the winner's.
+ * What may be resolved on this page, rebuilt whenever any of its three
+ * sources moves. Never captured by the surfaces that use it: they hold the
+ * resolver and ask again, so a banner attached early is not wrong for the
+ * life of the page.
  */
-let conversationGeneration = 0;
+let scope: ConversationScope = emptyScope();
+
+/** Banners currently on the page, so their counts can follow the scope. */
+const attachedBanners: AttachedBanner[] = [];
+
+/** Tokens already reported as present but unresolvable; reported once each. */
+const unresolvableReported = new Set<string>();
 
 function normalizeConversationUrl(href: string): string {
   return href.split('?')[0].split('#')[0];
@@ -122,11 +148,11 @@ let pageStatusChip: PageStatusChip | null = null;
 let lastSystemStatus: SystemCompatibilityStatus | null = null;
 let lastNerStatus: NerStatus | null = null;
 /**
- * Whether the adapter has stopped resolving this page's message box. Set from
- * the paste interceptor, which is the only place that finds out — and only at
- * the moment it matters. See `reportComposerLookup`.
+ * How this page's message box was last found, or null before any paste has
+ * asked. Set from the paste interceptor, which is the only place that finds
+ * out — and only at the moment it matters. See `reportComposerLookup`.
  */
-let composerMissing = false;
+let composerMatch: ComposerMatch | null = null;
 let activityListenersStarted = false;
 let lastActivityHeartbeatAt = 0;
 let releasePasteInterceptor: (() => void) | null = null;
@@ -215,28 +241,30 @@ function refreshPageStatusChip(): void {
   const reason = deriveChipReason({
     status: lastSystemStatus,
     nerStatus: lastNerStatus,
-    composerMissing,
+    composerMissing: composerMatch === 'none',
   });
   pageStatusChip.update(reason, reason ? chipReasonMessageForStatus(reason, lastSystemStatus) : undefined);
 }
 
 /**
- * Record whether the site adapter still resolves this page's message box.
+ * Record how this page's message box was found.
  *
- * A site can change its DOM at any time, and the old failure mode was the
- * worst one available to a privacy tool: initialization succeeded, the chip
- * stayed green, and every paste went through unreviewed with nothing said.
- * A failed lookup is reported on the spot and also left standing on the chip,
- * because the moment passes but the state does not.
+ * A site can change its DOM at any time, and the worst failure mode available
+ * to a privacy tool is the silent one: initialization succeeds, the chip
+ * stays green, and every paste goes through unreviewed with nothing said.
+ * Three outcomes are distinguished because they mean three different things
+ * to the user — protected, protected on a guess, and not protected — and the
+ * strongest warning keeps its meaning only if the middle case has its own.
  */
-function reportComposerLookup(found: boolean): void {
-  if (!found) {
+function reportComposerLookup(match: ComposerMatch): void {
+  if (match === 'none') {
     // Unconditional, NOT behind `settings.debug`: reaching here means text
     // reached the page without review, or reviewed text never landed. The
     // page's own UI shows nothing either way.
     console.warn(
-      '[PG:content] Could not find this page’s message box: pastes here are '
-        + 'not reviewed. This site may have changed.',
+      '[PG:content] No message box found on this page — neither the one this '
+        + 'site adapter knows nor the target of the paste. Text here is not '
+        + 'reviewed, and reviewed text has nowhere to be inserted.',
     );
 
     // The chip owns this surface: it appears on this same paste and says the
@@ -252,8 +280,8 @@ function reportComposerLookup(found: boolean): void {
     }
   }
 
-  if (composerMissing === !found) return;
-  composerMissing = !found;
+  if (composerMatch === match) return;
+  composerMatch = match;
   refreshPageStatusChip();
 }
 
@@ -335,15 +363,11 @@ function showIndicator(text: string, durationMs: number): void {
  * dependable option; `popstate` is added so back/forward registers at once.
  */
 function watchConversationUrl(): void {
-  // Runs for every adapter, including the generic one. Deciding what a URL
-  // change means no longer needs site-specific knowledge — see
-  // `conversationStillOnPage`.
   const check = (): void => {
     const next = normalizeConversationUrl(window.location.href);
     if (next === conversationUrl) return;
-    const previous = conversationUrl;
     conversationUrl = next;
-    void handleConversationChange(previous, next);
+    void adoptConversation(next);
   };
 
   window.addEventListener('popstate', check);
@@ -351,76 +375,302 @@ function watchConversationUrl(): void {
 }
 
 /**
- * Decide what a URL change meant and move the conversation's mappings
- * accordingly.
+ * Pick up whatever is known about the conversation now on screen.
  *
- * Two things can have happened: the site created the conversation and
- * rewrote its URL in place, or the user is now looking at a different
- * conversation. The evidence is weighed in that order of certainty:
- *
- *  1. A stored map already filed under `next` proves that key was on screen
- *     as its own conversation once before, so this is a switch back to it.
- *  2. Otherwise, text this session inserted still being rendered says the
- *     conversation survived the rewrite.
- *  3. Otherwise there is nothing to go on — and nothing of this session's at
- *     stake either, since (2) is exactly the test for that. Adopt `next`.
- *
- * Adopting is the safe default for the ambiguous case: carrying the previous
- * conversation's map forward would leave its originals revealable against
- * whatever the new page happens to say.
+ * Nothing here decides what the URL change meant. The one question asked is
+ * whether a record already exists under the incoming URL, and it is asked for
+ * a single purpose: a key that has been on screen as its own conversation
+ * before is positive proof that this is a switch, and that is the only thing
+ * that clears the tab ledger. Every other URL change leaves the ledger
+ * standing, so a conversation the site has just named keeps the tokens
+ * composed into it.
  */
-async function handleConversationChange(previous: string, next: string): Promise<void> {
-  const generation = ++conversationGeneration;
-
-  const stored = await loadEntityMap(next);
-  if (generation !== conversationGeneration) {
-    // A further navigation started while this read was in flight and owns
-    // the map now. Installing this one would leave the wrong conversation's
-    // originals resolvable — and persist them under the current URL on the
-    // next paste.
-    return;
-  }
-
-  const owned = ownedEntries(entityMap.toStored(), sessionPlaceholders);
-  const ownedCount = Object.keys(owned).length;
-  const nextAlreadyKnown = Object.keys(stored).length > 0;
-
-  const sameConversation =
-    !nextAlreadyKnown &&
-    ownedCount > 0 &&
-    conversationStillOnPage(
-      sessionPlaceholders,
-      document.body,
-      adapter.getInputElement(),
-    );
-
-  if (sameConversation) {
-    // The site has just created the conversation and rewritten the URL.
-    // Move the mappings recorded while composing onto the URL the user will
-    // come back to, otherwise they are stranded under the key being left.
-    // Still the same conversation, so the map stays as it is either way.
-    await migrateEntityMap(previous, next, owned);
+async function adoptConversation(next: string): Promise<void> {
+  if (await conversationRecordExists(next)) {
+    sessionPlaceholders.clear();
+    filer.reset();
     if (settings?.debug) {
-      console.log(`[PG:content] Conversation created; ${ownedCount} mapping(s) moved to ${next}`);
+      console.log(`[PG:content] ${next} is a conversation on record; tab ledger cleared`);
     }
-    return;
   }
+  await loadConversationScope();
+  scanPage();
+}
 
-  entityMap = new EntityMap(stored);
-  // Restored entries belong to that conversation's earlier sessions, not to
-  // this one, so this session has emitted nothing yet.
-  sessionPlaceholders.clear();
-  if (settings?.debug) {
-    console.log(`[PG:content] Switched conversation; ${entityMap.size} mapping(s) restored`);
-    if (ownedCount > 0) {
-      // Not provably wrong — the user may simply have opened another chat —
-      // but it is the shape a missed migration takes, and the only place it
-      // is visible.
+/**
+ * Read the record for the conversation on screen and rebuild the scope.
+ *
+ * A read that finishes after the page has moved on is discarded. It could
+ * only misdirect what resolves — records hold tokens, not originals — but
+ * nothing would come along to correct it.
+ */
+async function loadConversationScope(): Promise<void> {
+  const url = conversationUrl;
+  const loaded = await loadConversationRecord(url);
+  if (url !== conversationUrl) return;
+
+  conversationRecord = loaded;
+  if (!settings?.identityVaultEnabled) {
+    // With cross-session memory off the record is the only copy of these
+    // originals, and it also carries the numbering the anonymizer continues
+    // from. With it on, the vault owns both.
+    entityMap = new EntityMap({
+      ...loaded.originals,
+      ...ownedEntries(entityMap.toStored(), sessionPlaceholders),
+    });
+  }
+  rebuildScope();
+}
+
+/** This page session's ledger as `token -> original` pairs. */
+function ledgerEntries(): Record<string, string> {
+  return ownedEntries(entityMap.toStored(), sessionPlaceholders);
+}
+
+/**
+ * Recompose what may be resolved, and let every surface that shows it catch
+ * up. Cheap and pure, so it runs on every change rather than being kept in
+ * step by hand.
+ */
+function rebuildScope(): void {
+  scope = buildConversationScope({
+    recordTokens: conversationRecord.tokens,
+    recordOriginals: conversationRecord.originals,
+    ledger: ledgerEntries(),
+    observed: observedOnPage,
+    vault: identityVault,
+    vaultEnabled: settings?.identityVaultEnabled ?? false,
+  });
+  refreshBanners();
+}
+
+/**
+ * Files this tab's tokens under whichever conversation they turn up in.
+ *
+ * The transcript is re-read here rather than reused from the last scan: the
+ * filer runs after a paste and after a URL change as well as from the scan,
+ * and a move is worth being sure about.
+ */
+const filer = new ConversationFiler({
+  ledger: () => sessionPlaceholders,
+  observe: (tokens) =>
+    visibleTokens(tokens, readTranscriptText(document.body, adapter.getInputElement())),
+  currentUrl: () => conversationUrl,
+  move: (from, to, tokens) => moveConversationTokens(from, to, tokens),
+  onMoved: (from, to, tokens) => {
+    if (settings?.debug) {
       console.log(
-        `[PG:content] ${ownedCount} mapping(s) from this session stay filed under ${previous}`,
+        `[PG:content] ${tokens.length} token(s) seen at ${to}; moved there from ${from}`,
       );
     }
+  },
+});
+
+/**
+ * Read the page and act on what is there: admit unaltered tokens the vault
+ * knows, file this tab's tokens under the conversation they are rendered in,
+ * and offer a banner wherever something resolves.
+ *
+ * Runs on debounced transcript mutation, on URL change and after a paste.
+ * Every part of it is idempotent, so no single run has to be the right one.
+ */
+function scanPage(): void {
+  if (!document.body) return;
+  // A profile that has never replaced anything has nothing to observe, file
+  // or reveal, and this runs on every page mutation. Leave before the walk.
+  if (
+    sessionPlaceholders.size === 0
+    && identityVault.records.length === 0
+    && scope.size === 0
+  ) {
+    return;
   }
+
+  const composer = adapter.getInputElement();
+  const transcript = readTranscriptText(document.body, composer);
+
+  const seen = observedTokens(transcript);
+  const admitted = seen.filter((token) => vaultKnows(token));
+  if (!sameTokens(admitted, observedOnPage)) {
+    observedOnPage = admitted;
+    rebuildScope();
+  }
+  reportUnresolvableTokens(seen);
+
+  void filer.run();
+
+  attachLooseBanners(composer, transcript);
+}
+
+/** Whether the identity vault can supply an original for `token`. */
+function vaultKnows(token: string): boolean {
+  if (!settings?.identityVaultEnabled) return false;
+  return identityVault.records.some(
+    (record) => record.placeholder === token || record.syntheticValue === token,
+  );
+}
+
+function sameTokens(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const known = new Set(b);
+  return a.every((token) => known.has(token));
+}
+
+/**
+ * Note a token the user can see that this extension will not resolve.
+ *
+ * Deliberately a `console.debug` and nothing else. It is the one signal that
+ * a conversation has drifted out of scope, and it belongs to whoever is
+ * debugging that — telling the user about a token nothing can be done with
+ * would be noise where the extension is already doing its best.
+ */
+function reportUnresolvableTokens(seen: readonly string[]): void {
+  for (const token of seen) {
+    if (scope.has(token) || unresolvableReported.has(token)) continue;
+    unresolvableReported.add(token);
+    console.debug(
+      `[PG:content] ${token} is on this page but no original is known for it.`,
+    );
+  }
+}
+
+/**
+ * Offer a banner on any region holding a resolvable token that the adapter's
+ * reply selectors do not cover.
+ *
+ * This is what a rotted selector costs: precision. The banner lands on a
+ * block the token sits in rather than on the reply the site knows it to be
+ * part of, and it reads inert text only — but it appears, which is the whole
+ * difference between a redesign costing polish and costing the feature.
+ */
+function attachLooseBanners(composer: HTMLElement | null, transcript: string): void {
+  // One check over the text already in hand, rather than a walk that asks the
+  // same question of every node on the page and finds nothing.
+  if (scope.size === 0 || !scope.mightResolve(transcript)) return;
+
+  const turns = adapter.getResponseElements();
+  const anchors = findLooseTokenAnchors(
+    document.body,
+    turns,
+    composer,
+    (text) => scope.mightResolve(text) && scope.resolve(text).matches.length > 0,
+  );
+  for (const anchor of anchors) {
+    attachBanner(anchor, false);
+  }
+}
+
+/**
+ * Attach a banner, remembering it so its count can follow the scope.
+ *
+ * The composer is refused here as well as inside the banner. The banner knows
+ * what an editable element looks like; only the adapter knows which element
+ * this site's message box is, and a turn selector that has rotted onto it
+ * must not end up with a reveal control over text the user is about to send.
+ */
+function attachBanner(element: HTMLElement, readFormControls: boolean): boolean {
+  if (isInEditableRegion(element, adapter.getInputElement())) return false;
+
+  const banner = attachDeAnonBanner(element, (text) => scope.resolve(text), {
+    theme: settings?.theme,
+    readFormControls,
+  });
+  if (!banner) return false;
+  attachedBanners.push(banner);
+  return true;
+}
+
+/**
+ * Bring every banner up to date with the current scope, and offer one to
+ * replies that had nothing resolvable when they arrived.
+ *
+ * The second half matters as much as the first: a reply that streamed in
+ * before its conversation's record finished loading was passed over, and
+ * without this it would stay passed over until the next mutation.
+ */
+function refreshBanners(): void {
+  for (let i = attachedBanners.length - 1; i >= 0; i--) {
+    const banner = attachedBanners[i];
+    if (!banner.element.isConnected) {
+      attachedBanners.splice(i, 1);
+      continue;
+    }
+    banner.refresh();
+  }
+
+  if (scope.size === 0) return;
+  for (const element of adapter.getResponseElements()) {
+    attachBanner(element, true);
+  }
+}
+
+/**
+ * Write this session's tokens under the conversation they were emitted in,
+ * then let filing move them if the site renames it.
+ *
+ * With cross-session memory on, only the tokens are written: the identity
+ * vault holds the originals, and a record filed against the wrong
+ * conversation then costs precision rather than disclosure. With it off the
+ * vault is holding nothing, so the pairs go to session storage — enough to
+ * survive a reload and a conversation switch, and gone when the browser
+ * closes, which is what the setting's name promises.
+ */
+async function recordEmittedTokens(): Promise<void> {
+  const url = conversationUrl;
+  const entries = ledgerEntries();
+  const tokens = Object.keys(entries);
+  if (tokens.length === 0) return;
+
+  if (settings?.identityVaultEnabled) {
+    await saveConversationTokens(url, tokens);
+  } else {
+    await saveSessionConversationPairs(url, entries);
+  }
+  filer.noteFiled(url, tokens);
+
+  // The send that follows a paste is what renames the conversation, so this
+  // is the moment filing most often has work to do.
+  await filer.run();
+}
+
+/**
+ * Follow a change to the cross-session memory setting.
+ *
+ * Turning it on brings originals back into reach for every token already
+ * filed; turning it off takes them out of reach again. Either way what may be
+ * resolved on this page changes, and the surfaces showing it have to be told.
+ */
+async function reloadVaultAndScope(): Promise<void> {
+  identityVault = settings?.identityVaultEnabled
+    ? await loadIdentityVault()
+    : emptyVaultData();
+  await loadConversationScope();
+  scanPage();
+}
+
+/**
+ * Watch the whole page rather than the adapter's reply elements.
+ *
+ * Filing and observation must keep working when the reply selectors rot, so
+ * neither may be driven by them. `document.body` is coarse; the debounce and
+ * the early exits in `scanPage` are what make it affordable.
+ */
+function watchTranscript(): void {
+  let timer: number | null = null;
+  const schedule = (): void => {
+    if (timer !== null) clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      timer = null;
+      scanPage();
+    }, RESPONSE_DEBOUNCE_MS);
+  };
+
+  new MutationObserver(schedule).observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+  schedule();
 }
 
 function waitForDocumentBody(): Promise<void> {
@@ -524,19 +774,17 @@ function showReviewOverlay(
         // Record what this session put into the page. The map may also hold
         // entries restored from storage — on the shared "new chat" key those
         // can belong to another tab's draft — and those are not ours to
-        // persist or migrate.
+        // persist or file.
         for (const [replacement] of entityMap.entries()) {
           if (anonymizedText.includes(replacement)) {
             sessionPlaceholders.add(replacement);
           }
         }
 
-        // Persist conversation-scoped map (still used by the de-anon banner
-        // for the current view, regardless of vault state).
-        saveEntityMap(
-          conversationUrl,
-          ownedEntries(entityMap.toStored(), sessionPlaceholders),
-        );
+        // The ledger just grew, so what may be resolved on this page grew
+        // with it — before anything has been written anywhere.
+        rebuildScope();
+        void recordEmittedTokens();
 
         showIndicator(
           `\u{1F512} ${approvedSpans.length} item(s) replaced`,
@@ -695,24 +943,11 @@ interceptor.start();
 // --- Response observer with de-anonymization banners ---
 
 const responseObserver = new ResponseObserver(adapter, {
-  onResponseWithPlaceholders: async (element, _text) => {
-    // The conversation entity map covers placeholder-mode replacements
-    // (the legacy and most-common case). When synthetic mode is active
-    // for a record, that entry is also present in the conversation map
-    // because anonymizeWithVault calls addExternal — so a single map
-    // suffices for all the LLM might emit verbatim from the prompt.
-    const stored = await loadEntityMap(conversationUrl);
-    const map = augmentEntityMap(
-      stored,
-      identityVault,
-      settings.identityVaultEnabled,
-    );
-
-    if (map.size === 0) return;
-
-    attachDeAnonBanner(element, map, settings.theme);
-
-    if (settings.debug) {
+  onResponseWithPlaceholders: (element) => {
+    // Resolved against the scope in memory rather than a fresh storage read:
+    // the banner holds the resolver and asks again, so there is nothing to
+    // wait for here and nothing to go stale.
+    if (attachBanner(element, true) && settings.debug) {
       console.log('[PG:content] De-anonymization banner attached to response');
     }
   },
@@ -730,24 +965,28 @@ const responseObserver = new ResponseObserver(adapter, {
 // --- Clipboard interceptor (toast-based de-anonymization) ---
 
 const clipboardInterceptor = new ClipboardInterceptor({
-  resolve: async (text: string) => {
-    const stored = await loadEntityMap(conversationUrl);
-    const map = augmentEntityMap(
-      stored,
-      identityVault,
-      settings.identityVaultEnabled,
-    );
-    if (map.size === 0) return { matches: [], deAnonText: text };
-    return resolveText(text, map);
-  },
+  resolve: async (text: string) => scope.resolve(text),
 });
 
 // --- Settings listener ---
 
-chrome.runtime.onMessage.addListener((message, _sender, _sendResponse): undefined => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse): undefined => {
+  if (message.type === 'GET_PAGE_PROTECTION_STATE') {
+    // Answered synchronously: the popup asks the active tab when it opens,
+    // and a page that has not been pasted into yet answers `null` rather than
+    // claiming anything about a lookup that never happened.
+    sendResponse({
+      type: 'PAGE_PROTECTION_STATE',
+      payload: { composerMatch },
+    });
+    return undefined;
+  }
+
   if (message.type === 'SETTINGS_UPDATED') {
+    const vaultToggled = settings?.identityVaultEnabled !== message.payload.identityVaultEnabled;
     settings = message.payload;
     interceptor.setEnabled(settings.enabled);
+    if (vaultToggled) void reloadVaultAndScope();
     clipboardInterceptor.setTheme(settings.theme);
     clipboardInterceptor.setEnabled(
       settings.enabled && settings.clipboardInterceptEnabled,
@@ -789,14 +1028,13 @@ async function init(): Promise<void> {
 
   adaptiveThresholds = await computeAdaptiveThresholds(settings.minConfidence);
 
-  // Restore entity map for this conversation
-  const stored = await loadEntityMap(conversationUrl);
-  entityMap = new EntityMap(stored);
-
-  // Restore identity vault (cross-session, cross-provider)
+  // Restore identity vault (cross-session, cross-provider) before the
+  // conversation record: the record's tokens resolve through it.
   if (settings.identityVaultEnabled) {
     identityVault = await loadIdentityVault();
   }
+
+  await loadConversationScope();
 
   releasePasteInterceptor?.();
   releasePasteInterceptor = null;
@@ -812,6 +1050,7 @@ async function init(): Promise<void> {
         const next = changes['pg_identity_vault'].newValue;
         if (next && Array.isArray(next.records)) {
           identityVault = next;
+          rebuildScope();
           if (settings.debug) {
             console.log('[PG:content] Vault reloaded from storage event');
           }
@@ -820,8 +1059,10 @@ async function init(): Promise<void> {
       if (changes['pg_settings']) {
         const next = changes['pg_settings'].newValue as Settings | undefined;
         if (next) {
+          const vaultToggled = settings?.identityVaultEnabled !== next.identityVaultEnabled;
           settings = next;
           interceptor.setEnabled(settings.enabled);
+          if (vaultToggled) void reloadVaultAndScope();
           clipboardInterceptor.setTheme(settings.theme);
           clipboardInterceptor.setEnabled(
             settings.enabled && settings.clipboardInterceptEnabled,
@@ -851,6 +1092,7 @@ async function init(): Promise<void> {
   // Start observation and clipboard restoration after the DOM is available.
   startSupportedPageActivityHeartbeat();
   watchConversationUrl();
+  watchTranscript();
   responseObserver.start();
   clipboardInterceptor.setTheme(settings.theme);
   clipboardInterceptor.setEnabled(settings.clipboardInterceptEnabled);
@@ -859,7 +1101,7 @@ async function init(): Promise<void> {
   if (settings.debug) {
     console.log(`[PG:content] Privacy Guardrail active on ${adapter.name} (${window.location.hostname})`);
     console.log(`[PG:content] Adaptive thresholds:`, adaptiveThresholds);
-    console.log(`[PG:content] Entity map size: ${entityMap.size}`);
+    console.log(`[PG:content] Conversation scope size: ${scope.size}`);
     console.log(`[PG:content] Vault size: ${identityVault.records.length}`);
   }
 }

@@ -1,0 +1,23 @@
+<div id="web-mobile-root">
+  <main data-mobile-shell="desktop">
+    <!-- assistant turn -->
+    <ol>
+      <li data-message-role="user"><div>A synthetic question.</div></li>
+      <li data-message-role="assistant">
+        <div data-assistant-markdown>
+          <p>A synthetic reply mentioning [PERSON_1].</p>
+        </div>
+      </li>
+    </ol>
+    <!-- composer -->
+    <form class="wm-composer-composer">
+      <textarea
+        id="mobile-composer-prompt"
+        class="wm-composer-textarea"
+        data-mobile-composer-prompt
+        name="prompt"
+        placeholder="Ask anything"></textarea>
+      <button type="submit">Send</button>
+    </form>
+  </main>
+</div>

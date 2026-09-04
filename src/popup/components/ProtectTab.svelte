@@ -30,6 +30,7 @@
 		nerStatus={protection.nerStatus}
 		cpuFallback={protection.cpuFallback}
 		resourceSummary={protection.resourceSummary}
+		composerMatch={protection.composerMatch}
 	/>
 	<CategoryChipsCard
 		categories={categories.categories}
