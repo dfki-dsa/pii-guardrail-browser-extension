@@ -1,13 +1,8 @@
 import type { SiteAdapter } from './adapter-interface';
-import { insertTextCompat, urlPath } from './adapter-interface';
+import { insertTextCompat } from './adapter-interface';
 
 export class GeminiAdapter implements SiteAdapter {
   readonly name = 'Gemini';
-
-  hasConversationId(url: string): boolean {
-    // gemini.google.com/app -> /app/<id> after the first send.
-    return /^\/app\/[^/]+/.test(urlPath(url));
-  }
 
   getInputElement(): HTMLElement | null {
     // Gemini uses a rich text editor with contentEditable

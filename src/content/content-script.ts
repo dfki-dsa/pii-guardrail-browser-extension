@@ -16,6 +16,7 @@ import { PasteInterceptor } from './paste-interceptor';
 import { sendRuntimeMessageBestEffort } from './runtime-messaging';
 import { shouldShowCriticalLocalAiModal } from './critical-local-ai-modal-status';
 import { ResponseObserver } from './response-observer';
+import { conversationStillOnPage } from './conversation-continuity';
 import { ClipboardInterceptor } from './clipboard-interceptor';
 import { resolveText } from '../shared/placeholder-resolver';
 import { ReviewOverlay } from '../ui/overlay/overlay';
@@ -334,14 +335,9 @@ function showIndicator(text: string, durationMs: number): void {
  * dependable option; `popstate` is added so back/forward registers at once.
  */
 function watchConversationUrl(): void {
-  // An adapter that cannot tell a persisted conversation from a "new chat"
-  // screen makes every URL change uninterpretable: on an unrecognised site a
-  // route change need not mean the conversation changed, and adopting a
-  // different map on that guess would drop mappings the current page can
-  // still reveal. Those sites keep the documented fallback — the load-time
-  // URL for the lifetime of the page.
-  if (!adapter.hasConversationId) return;
-
+  // Runs for every adapter, including the generic one. Deciding what a URL
+  // change means no longer needs site-specific knowledge — see
+  // `conversationStillOnPage`.
   const check = (): void => {
     const next = normalizeConversationUrl(window.location.href);
     if (next === conversationUrl) return;
@@ -354,31 +350,28 @@ function watchConversationUrl(): void {
   window.setInterval(check, CONVERSATION_URL_POLL_MS);
 }
 
+/**
+ * Decide what a URL change meant and move the conversation's mappings
+ * accordingly.
+ *
+ * Two things can have happened: the site created the conversation and
+ * rewrote its URL in place, or the user is now looking at a different
+ * conversation. The evidence is weighed in that order of certainty:
+ *
+ *  1. A stored map already filed under `next` proves that key was on screen
+ *     as its own conversation once before, so this is a switch back to it.
+ *  2. Otherwise, text this session inserted still being rendered says the
+ *     conversation survived the rewrite.
+ *  3. Otherwise there is nothing to go on — and nothing of this session's at
+ *     stake either, since (2) is exactly the test for that. Adopt `next`.
+ *
+ * Adopting is the safe default for the ambiguous case: carrying the previous
+ * conversation's map forward would leave its originals revealable against
+ * whatever the new page happens to say.
+ */
 async function handleConversationChange(previous: string, next: string): Promise<void> {
   const generation = ++conversationGeneration;
 
-  const leftNewChatScreen = adapter.hasConversationId
-    ? !adapter.hasConversationId(previous) && adapter.hasConversationId(next)
-    : false;
-
-  if (leftNewChatScreen) {
-    // The site has just created the conversation and rewritten the URL.
-    // Move the mappings recorded while composing onto the URL the user will
-    // come back to, otherwise they are stranded under the "new chat" key.
-    // Still the same conversation, so the map stays as it is either way.
-    const owned = ownedEntries(entityMap.toStored(), sessionPlaceholders);
-    const count = Object.keys(owned).length;
-    if (count > 0) {
-      await migrateEntityMap(previous, next, owned);
-    }
-    if (settings?.debug) {
-      console.log(`[PG:content] Conversation created; ${count} mapping(s) moved to ${next}`);
-    }
-    return;
-  }
-
-  // A genuinely different conversation. Adopt its stored mappings rather
-  // than carrying the previous conversation's state into it.
   const stored = await loadEntityMap(next);
   if (generation !== conversationGeneration) {
     // A further navigation started while this read was in flight and owns
@@ -387,12 +380,46 @@ async function handleConversationChange(previous: string, next: string): Promise
     // next paste.
     return;
   }
+
+  const owned = ownedEntries(entityMap.toStored(), sessionPlaceholders);
+  const ownedCount = Object.keys(owned).length;
+  const nextAlreadyKnown = Object.keys(stored).length > 0;
+
+  const sameConversation =
+    !nextAlreadyKnown &&
+    ownedCount > 0 &&
+    conversationStillOnPage(
+      sessionPlaceholders,
+      document.body,
+      adapter.getInputElement(),
+    );
+
+  if (sameConversation) {
+    // The site has just created the conversation and rewritten the URL.
+    // Move the mappings recorded while composing onto the URL the user will
+    // come back to, otherwise they are stranded under the key being left.
+    // Still the same conversation, so the map stays as it is either way.
+    await migrateEntityMap(previous, next, owned);
+    if (settings?.debug) {
+      console.log(`[PG:content] Conversation created; ${ownedCount} mapping(s) moved to ${next}`);
+    }
+    return;
+  }
+
   entityMap = new EntityMap(stored);
   // Restored entries belong to that conversation's earlier sessions, not to
   // this one, so this session has emitted nothing yet.
   sessionPlaceholders.clear();
   if (settings?.debug) {
     console.log(`[PG:content] Switched conversation; ${entityMap.size} mapping(s) restored`);
+    if (ownedCount > 0) {
+      // Not provably wrong — the user may simply have opened another chat —
+      // but it is the shape a missed migration takes, and the only place it
+      // is visible.
+      console.log(
+        `[PG:content] ${ownedCount} mapping(s) from this session stay filed under ${previous}`,
+      );
+    }
   }
 }
 

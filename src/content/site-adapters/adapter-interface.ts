@@ -23,30 +23,6 @@ export interface SiteAdapter {
    * Calls the callback with each new response element.
    */
   observeResponses(callback: (element: HTMLElement) => void): MutationObserver;
-
-  /**
-   * True when the URL identifies a persisted conversation rather than the
-   * site's "new chat" screen.
-   *
-   * Every supported site creates a conversation on the first send and then
-   * rewrites the URL in place (`/new` -> `/chat/<uuid>`, `/` -> `/c/<uuid>`,
-   * ...). Placeholder mappings recorded before that rewrite are filed under
-   * the transient URL and would be unreachable on the next visit, so the
-   * content script uses this to detect the rewrite and move them across.
-   *
-   * Adapters that do not implement it keep the old behaviour: the URL at
-   * load time is used for the lifetime of the page.
-   */
-  hasConversationId?(url: string): boolean;
-}
-
-/** Path portion of a URL, tolerant of values that are not parseable. */
-export function urlPath(url: string): string {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return url;
-  }
 }
 
 const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', '']);
