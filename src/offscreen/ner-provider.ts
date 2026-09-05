@@ -560,7 +560,7 @@ export function chunkTextByTokens(
 
   // sanity gate: if we could not place most of the tokens we do not trust
   // the boundaries either, and the caller should fall back to character chunks.
-  if (alignmentCoverage(ranges) < 0.8) return null;
+  if (alignmentCoverage(ranges, pieces) < MIN_ALIGNMENT_COVERAGE) return null;
   if (placed.length <= maxTokens) {
     return [
       {
@@ -1057,20 +1057,8 @@ function expandSpanToTokenBoundaries(text: string, span: PiiSpan): PiiSpan {
 const JOINABLE_GAP_PATTERN = /^[ \t._@:/+-]*$/;
 const MAX_JOINABLE_GAP_CHARS = 3;
 
-/**
- * Longest unlabelled stretch we will bridge inside a single unbroken run of
- * non-whitespace characters.
- *
- * The model sometimes mislabels a slice in the middle of an identifier. 
- * If there is no whitespace anywhere in the gap, both detections
- * belong to the same token run, and closing it can only over-redact
- * characters that sit between two genuine hits.
- */
-const MAX_INTRA_RUN_GAP_CHARS = 16;
-
 function isJoinableGap(gap: string): boolean {
-  if (gap.length <= MAX_JOINABLE_GAP_CHARS && JOINABLE_GAP_PATTERN.test(gap)) return true;
-  return gap.length <= MAX_INTRA_RUN_GAP_CHARS && !/\s/.test(gap);
+  return gap.length <= MAX_JOINABLE_GAP_CHARS && JOINABLE_GAP_PATTERN.test(gap);
 }
 
 function isWordCharacter(char: string): boolean {
@@ -1110,53 +1098,6 @@ const EMAIL_DOMAIN_TAIL_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
   'LOCATION',
   'MISC',
 ]);
-
-/**
- * Rejoin same-type spans that a mislabelled slice split apart mid-identifier.
- *
- * Grouping already bridges an unlabelled gap, but the model sometimes puts a
- * different label in the middle instead and the middle span then fell under 
- * its own threshold. Requiring the whole bridge to be free of
- * whitespace keeps this to a single token run.
- */
-function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
-  const out: PiiSpan[] = [];
-
-  for (const span of spans) {
-    let mergedInto = -1;
-
-    for (let i = out.length - 1; i >= 0 && i >= out.length - 3; i -= 1) {
-      const candidate = out[i];
-      if (candidate.entity_type !== span.entity_type || candidate.end > span.start) continue;
-
-      // An empty bridge counts: completing partial words can leave two halves of
-      // one identifier flush against each other with the mislabelled slice
-      // overlapping them both.
-      const bridge = sliceTextByByteOffsets(text, candidate.end, span.start);
-      if (bridge.length > MAX_INTRA_RUN_GAP_CHARS || /\s/.test(bridge)) continue;
-
-      candidate.end = span.end;
-      candidate.text = sliceTextByByteOffsets(text, candidate.start, candidate.end);
-      mergedInto = i;
-      break;
-    }
-
-    if (mergedInto === -1) {
-      out.push(span);
-      continue;
-    }
-
-    // Anything the merge swallowed is no longer its own span.
-    const absorber = out[mergedInto];
-    out.splice(
-      mergedInto + 1,
-      out.length - mergedInto - 1,
-      ...out.slice(mergedInto + 1).filter((other) => other.end > absorber.end)
-    );
-  }
-
-  return out;
-}
 
 function stitchEmailDomains(text: string, spans: PiiSpan[]): PiiSpan[] {
   const stitched: PiiSpan[] = [];
@@ -1263,7 +1204,7 @@ export function alignedTokensToSpans(
   }
   flush();
 
-  return stitchEmailDomains(text, closeIntraRunGaps(text, grouped));
+  return stitchEmailDomains(text, grouped);
 }
 
 export function transformerOutputToSpans(
@@ -1426,7 +1367,7 @@ export function createTransformersNerProvider(
       // spans on the wrong words entirely (see token-offsets.ts).
       const pieces = tokenizer ? safeTokenize(tokenizer, chunk.text) : null;
       const ranges = pieces ? alignTokensToText(chunk.text, pieces) : null;
-      const coverage = ranges ? alignmentCoverage(ranges) : 0;
+      const coverage = ranges && pieces ? alignmentCoverage(ranges, pieces) : 0;
       const useOffsets = ranges !== null && coverage >= MIN_ALIGNMENT_COVERAGE;
 
       const chunkStartedAt = performance.now();

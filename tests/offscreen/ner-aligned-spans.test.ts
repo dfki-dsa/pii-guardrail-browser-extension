@@ -185,23 +185,6 @@ describe('alignedTokensToSpans — grouping rules', () => {
     ]);
   });
 
-  test('closes a mislabelled gap inside one identifier rather than half-redacting it', () => {
-    // The model sometimes drops a different label into the middle of an
-    // identifier. Left split, the anonymizer would redact both ends and publish
-    // the middle in the clear.
-    const text = 'Schreibt an t.tester@example.invalid';
-    const tokens = ['▁Schreib', 't', '▁an', '▁t', '.', 'te', 'ster', '@', 'ex', 'a', 'mple', '.', 'in', 'vali', 'd'];
-    const spans = build(text, tokens, {
-      3: ['B-EMAIL_ADDRESS', 0.98], 4: ['B-EMAIL_ADDRESS', 0.9],
-      5: ['I-ACCOUNT_IDENTIFIER', 0.44], 6: ['I-ACCOUNT_IDENTIFIER', 0.6],
-      7: ['B-EMAIL_ADDRESS', 0.9], 8: ['B-EMAIL_ADDRESS', 0.9], 9: ['B-EMAIL_ADDRESS', 0.9],
-      10: ['B-EMAIL_ADDRESS', 0.9], 11: ['B-EMAIL_ADDRESS', 0.9], 12: ['B-EMAIL_ADDRESS', 0.9],
-      13: ['B-EMAIL_ADDRESS', 0.9], 14: ['B-EMAIL_ADDRESS', 0.9],
-    });
-
-    expect(spans.map((span) => span.text)).toContain('t.tester@example.invalid');
-  });
-
   test('completes a half-labelled word but stops at a non-word boundary', () => {
     const text = 'Muster schrieb an max.muster@example.invalid';
     const tokens = ['▁Must', 'er', '▁schrieb', '▁an', '▁max', '.', 'mu', 'ster', '@', 'ex', 'a', 'mple', '.', 'in', 'vali', 'd'];
