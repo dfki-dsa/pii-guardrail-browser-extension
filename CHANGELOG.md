@@ -6,6 +6,8 @@ The project follows public beta release notes for `0.x` versions.
 
 ## Unreleased
 
+- Fixed Local AI marking the wrong text in a paste, and missing most of a long one. Detected values were located by searching the paste for each fragment the model returned, so a fragment that occurs more than once could be marked at the wrong occurrence, and the surrounding words could be swept in with it. Positions now come from the model's own tokens. Long text was also split by character count rather than by how much the model can read at once, so roughly the last two thirds of a long paste was never scanned; it is now split by what the model actually reads, and all of it is checked.
+
 ## [0.4.2] - Public Beta
 
 - Fixed replaced values being forgotten once a new chat got its own address. Starting a chat, pasting something that was replaced and sending it moves the page from the "new chat" screen to the conversation's own URL, and the replacements stayed filed under the screen you left — so after a reload the reply could no longer be turned back into your original values. They now move with the conversation, and switching between existing chats without a page reload loads the right conversation's replacements.
