@@ -65,16 +65,10 @@ export type TokenClassificationItem = {
   entity_group?: string;
   start?: number;
   end?: number;
-  /**
-   * Position of this token in the tokenizer's 'input_ids'. Present only for raw
-   * output. It is the join key back onto the offset table containing start and end.
-   */
+  /** Index into 'input_ids'; the join key onto the offset table. Raw output only. */
   index?: number;
 };
 
-/**
- * The slice of 'PreTrainedTokenizer'
- */
 export interface NerTokenizerLike {
   tokenize(text: string, options?: { add_special_tokens?: boolean }): string[];
   readonly model_max_length?: number;
@@ -121,13 +115,7 @@ type TransformersModule = {
   ) => Promise<TokenClassificationPipeline>;
 };
 
-/**
- * A navigator-like object that may expose WebGPU (optional).
- *
- * 'Partial<Navigator>' rather than an extension of it: the offscreen document's
- * navigator is typed from whichever DOM lib is in scope, and only the members
- * read here matter.
- */
+/** 'Partial<Navigator>': the offscreen document's DOM lib varies, and only 'gpu' is read. */
 type NavigatorWithWebGpu = Partial<Navigator> & {
   gpu?: {
     requestAdapter?: () => Promise<unknown>;
@@ -187,15 +175,9 @@ const REQUIRED_RUNTIME_ASSETS = [
 
 export const DEFAULT_NER_CHUNK_OVERLAP_CHARS = 256;
 
-/**
- * Token budget per chunk.
- */
 export const DEFAULT_NER_MAX_TOKENS_PER_CHUNK = 480;
 export const DEFAULT_NER_CHUNK_OVERLAP_TOKENS = 64;
 
-/**
- * Character ceiling used when no tokenizer is available to chunk by token.
- */
 export const FALLBACK_MAX_CHUNK_CHARS = 800;
 
 // Distilbert-uncased + AI4Privacy emits softer scores than typical NER models
@@ -502,14 +484,10 @@ export interface NerTokenChunkingOptions {
   overlapTokens?: number;
 }
 
-/**
- * Below this share of placed tokens we stop trusting the offset table and fall
- * back to the legacy search, which is less accurate but degrades visibly rather
- * than silently pointing spans at the wrong words.
- */
+/** Below this share of placed tokens, fall back to the legacy search. */
 export const MIN_ALIGNMENT_COVERAGE = 0.8;
 
-/** Positions reserved for the post-processor's `<s>` / `</s>` (or `[CLS]` / `[SEP]`). */
+/** Positions reserved for '<s>' / '</s>' (or '[CLS]' / '[SEP]'). */
 const SPECIAL_TOKEN_BUDGET = 2;
 
 function safeTokenize(tokenizer: NerTokenizerLike, text: string): string[] | null {
@@ -531,20 +509,11 @@ function tokenLimitFor(tokenizer: NerTokenizerLike): number {
 }
 
 /**
- * Split text on token boundaries so no chunk can exceed the encoder's
- * position limit.
- *
- * Boundaries are taken from the aligner's char ranges, so a chunk never cuts a
- * word in half and no source character is dropped: alignTokensToText places
- * every content token, and consecutive chunks are joined end-to-start.
+ * Split text on token boundaries so no chunk exceeds the encoder's position limit.
+ * Boundaries come from the aligner, so no chunk cuts a word and no character is
+ * dropped between them.
  */
-/**
- * Character offset a chunk beginning at 'index' should open on.
- *
- * 'index' can itself be an unplaced token, so scan forward for the first placed
- * one. That offset is never past the previous chunk's end — the previous
- * boundary is a placed token at or after 'index' — so the chunks still meet.
- */
+/** 'index' may itself be unplaced, so scan forward for the first placed token. */
 function chunkStartChar(ranges: readonly (TokenCharRange | null)[], index: number): number {
   for (let i = index; i < ranges.length; i += 1) {
     const range = ranges[i];
@@ -554,13 +523,9 @@ function chunkStartChar(ranges: readonly (TokenCharRange | null)[], index: numbe
 }
 
 /**
- * Index of the token a chunk should close on, given the end its budget allows.
- *
- * A chunk is cut at character offsets, so the boundary has to sit on a token the
- * aligner actually placed. Preferring the last placed token at or before the
- * budget keeps the chunk within it; only when an unplaced run swallows the whole
- * window do we step past the budget instead, which costs a few encoder positions
- * but never drops those characters from every chunk.
+ * The boundary must sit on a placed token. Taking the last one at or before the
+ * budget keeps the chunk within it; only an unplaced run filling the whole window
+ * makes us step past, which costs a few positions but drops no characters.
  */
 function chunkBoundaryIndex(
   ranges: readonly (TokenCharRange | null)[],
@@ -598,8 +563,6 @@ export function chunkTextByTokens(
   const ranges = alignTokensToText(text, pieces);
   if (!ranges.some((range) => range !== null)) return null;
 
-  // sanity gate: if we could not place most of the tokens we do not trust
-  // the boundaries either, and the caller should fall back to character chunks.
   if (alignmentCoverage(ranges, pieces) < MIN_ALIGNMENT_COVERAGE) return null;
   if (pieces.length <= maxTokens) {
     return [
@@ -616,20 +579,12 @@ export function chunkTextByTokens(
   const chunks: NerTextChunk[] = [];
   let tokenStart = 0;
 
-  // The budget counts every tokenizer piece, not only the ones we could place.
-  // An unplaced piece — an <unk>, a dropped or zero-width character — still
-  // occupies an encoder position, so measuring the chunk by placed tokens alone
-  // would let it overrun the very limit this function exists to respect.
+  // Budget in every piece, not just placed ones: an unplaced piece still occupies
+  // an encoder position, so counting only placed ones lets a chunk overrun.
   while (tokenStart < pieces.length) {
     const tokenEnd = Math.min(pieces.length, tokenStart + maxTokens);
-    // Close each chunk at the *next* chunk's first token rather than at its own
-    // last one, so consecutive chunks meet with no gap. Characters between
-    // tokens have no boundary of their own — whitespace, but also anything the
-    // aligner could not place (an <unk>, a dropped or zero-width character) —
-    // and closing on our own last token would leave them in no chunk at all,
-    // silently unscanned. Every character lands in at least one chunk; with
-    // overlapTokens > 0 the shared region is deliberately in two, and
-    // mergeOverlappingNerSpans dedupes the results.
+    // Close on the *next* chunk's first token: characters between tokens have no
+    // boundary of their own and would otherwise land in no chunk at all.
     const boundary = tokenEnd >= pieces.length ? pieces.length : chunkBoundaryIndex(ranges, tokenStart, tokenEnd);
     const startChar = tokenStart === 0 ? 0 : chunkStartChar(ranges, tokenStart);
     const endChar = boundary >= pieces.length ? text.length : ranges[boundary]!.start;
@@ -1090,15 +1045,7 @@ function expandSpanToTokenBoundaries(text: string, span: PiiSpan): PiiSpan {
   };
 }
 
-/**
- * Characters allowed to sit between two same-type fragments that still belong to
- * one entity.
- *
- * Sub-word pieces are usually flush. Multi-word names and addresses 
- * are separated by a single space ('FirstName LastName',
- * 'DE01 2345 6789'). Anything else (a comma, a bracket, a line break, a real
- * word) ends the entity.
- */
+/** A comma, bracket, line break or real word between two fragments ends the entity. */
 const JOINABLE_GAP_PATTERN = /^[ \t._@:/+-]*$/;
 const MAX_JOINABLE_GAP_CHARS = 3;
 
@@ -1110,13 +1057,6 @@ function isWordCharacter(char: string): boolean {
   return /^[\p{L}\p{N}_]$/u.test(char);
 }
 
-/**
- * Grow a range outward only when it stops inside a word.
- *
- * completing the word recovers the rest. The guard is that 
- * both the character inside the boundary and the one outside it 
- * must be word characters.
- */
 function completePartialWord(text: string, range: TokenCharRange): TokenCharRange {
   let { start, end } = range;
 
@@ -1144,40 +1084,22 @@ const EMAIL_DOMAIN_TAIL_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
   'MISC',
 ]);
 
-/**
- * Longest mislabelled stretch we will bridge inside a single identifier.
- */
 const MAX_INTRA_RUN_GAP_CHARS = 16;
 
-/**
- * Characters that can sit *inside* one identifier.
- *
- * Deliberately excludes every separator -- whitespace, comma, bracket, slash,
- * semicolon -- so a bridge can only ever close a gap within one value, never
- * reach across the boundary between two of them.
- */
+/** Excludes every separator, so a bridge cannot reach across two values. */
 const INTRA_RUN_BRIDGE_PATTERN = /^[\p{L}\p{N}_.\-+@]*$/u;
 
 function isBridgeableGap(bridge: string): boolean {
   return bridge.length <= MAX_INTRA_RUN_GAP_CHARS && INTRA_RUN_BRIDGE_PATTERN.test(bridge);
 }
 
-/** How far back a bridge may reach for the span it rejoins. */
 const INTRA_RUN_LOOKBACK_SPANS = 3;
 
 /**
  * Rejoin same-type spans that a mislabelled slice split apart mid-identifier.
  *
- * Grouping already bridges an unlabelled gap, but the model sometimes drops a
- * different label into the middle instead, and that middle span then falls under
- * its own threshold. Left split, the anonymizer redacts both ends and publishes
- * the middle in the clear: 't.tester@example.invalid' becomes a redacted 't.',
- * an exposed 'tester', and a redacted '@example.invalid'.
- *
- * The bridge must be identifier interior only. An earlier form asked merely for
- * no whitespace, which also joined 'a@b.example,c@d.example' and two people
- * written 'Mueller,Schmidt' into one span, giving one placeholder for two
- * distinct values.
+ * When that middle falls under its own threshold, both ends are redacted and
+ * 'tester' of 't.tester@example.invalid' is left in the clear.
  */
 function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
   const out: PiiSpan[] = [];
@@ -1189,9 +1111,7 @@ function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
       const candidate = out[i];
       if (candidate.entity_type !== span.entity_type || candidate.end > span.start) continue;
 
-      // An empty bridge counts: completing partial words can leave two halves of
-      // one identifier flush against each other with the mislabelled slice
-      // overlapping them both.
+      // An empty bridge counts: the two halves can end up flush.
       if (!isBridgeableGap(sliceTextByByteOffsets(text, candidate.end, span.start))) continue;
 
       candidate.end = span.end;
@@ -1205,7 +1125,6 @@ function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
       continue;
     }
 
-    // Anything the merge swallowed is no longer its own span.
     const absorber = out[mergedInto];
     out.splice(
       mergedInto + 1,
@@ -1246,16 +1165,13 @@ function stitchEmailDomains(text: string, spans: PiiSpan[]): PiiSpan[] {
 /**
  * Build spans from raw per-token predictions using real character offsets.
  *
- * 'ranges' must be the aligner's output for the same tokenizer call the model
- * saw, so 'item.index' addresses it directly. Grouping is by entity type plus
- * source adjacency rather than by the model's BIO prefixes. 'simple'
- * strategy therefore breaks one email into six groups.
+ * 'ranges' must be the aligner's output for the tokenizer call the model saw, so
+ * 'item.index' addresses it directly. Grouping is by entity type and source
+ * adjacency, not the model's BIO prefixes.
  *
- * A group's score is its opening token's score (HuggingFace's 'first' strategy).
- * Measured on real output, confidence concentrates on entity onset and decays
- * across continuation pieces: 'firstName.lastName@` scores
- * [0.999, 0.999, 0.473, 0.670, 0.586, 0.631], so averaging would push a genuine
- * address under the email gate.
+ * A group scores from its opening token ('first' strategy): confidence decays across
+ * continuation pieces -- 'firstName.lastName@' scores [0.999, 0.999, 0.473, 0.670,
+ * 0.586, 0.631] -- so averaging would drop a genuine address under the email gate.
  */
 export function alignedTokensToSpans(
   text: string,
@@ -1479,10 +1395,8 @@ export function createTransformersNerProvider(
       throwIfAborted(signal);
       const chunk = chunks[i];
 
-      // Offsets come from aligning the tokenizer's own pieces to the chunk.
-      // Transformers.js leaves 'start'/'end' undefined for token-classification,
-      // and reconstructing them by searching for each predicted fragment puts
-      // spans on the wrong words entirely (see token-offsets.ts).
+      // Transformers.js leaves 'start'/'end' undefined, and searching for each
+      // predicted fragment puts spans on the wrong words (see token-offsets.ts).
       const pieces = tokenizer ? safeTokenize(tokenizer, chunk.text) : null;
       const ranges = pieces ? alignTokensToText(chunk.text, pieces) : null;
       const coverage = ranges && pieces ? alignmentCoverage(ranges, pieces) : 0;

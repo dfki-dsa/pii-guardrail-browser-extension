@@ -1,33 +1,20 @@
 /**
  * Character-offset recovery for token-classification output.
  *
- * Transformers.js does not emit 'start' / 'end' for the token-classification
- * pipeline. Every item comes back with 'start: undefined, end: undefined', 
- * so the only way to place a prediction back into the source text is to 
- * align the tokenizer's own pieces against it.
- *
- * Here we align the complete piece sequence instead. With no gaps in the sequence the cursor 
- * cannot skip ahead, so each piece lands on its true source characters.
- *
- * Supported tokenizer styles:
- *  - SentencePiece / Metaspace (XLM-R, the BardsAI model): word-initial pieces
- *    carry a `▁` prefix, continuations carry nothing.
- *  - WordPiece (DistilBERT, the AI4Privacy and HikmaAI models): continuation
- *    pieces carry a `##` prefix, word-initial pieces carry nothing. These are
- *    `-uncased` checkpoints that also strip accents, so matching folds case and
- *    combining marks.
+ * Transformers.js leaves 'start' / 'end' undefined, so predictions are placed by
+ * aligning the tokenizer's own pieces against the source. Handles Metaspace ('▁'
+ * on word-initial pieces) and WordPiece ('##' on continuations); the WordPiece
+ * checkpoints are '-uncased', so matching folds case and accents.
  */
 
 const METASPACE = '▁';
 const WORDPIECE_CONTINUATION = '##';
 
-/** CHAR gap after the cursor when a piece does not match the verbatim. */
+/** How far to scan forward when a piece does not match at the cursor. */
 const RESYNC_WINDOW_CHARS = 48;
 
 export interface TokenCharRange {
-  /** Inclusive character index into the original (un-normalized) text. */
   start: number;
-  /** Exclusive character index into the original text. */
   end: number;
 }
 
@@ -44,13 +31,7 @@ const DEFAULT_SPECIAL_TOKENS: readonly string[] = [
   '[MASK]',
 ];
 
-/**
- * Case and accent-folded view of a string, with an index back to the original.
- *
- * 'folded[i]' corresponds to 'sourceIndex[i]' in the original text. Folding is
- * applied per source character, so one source character may contribute zero or several 
- * folded characters. The index array keeps the mapping exact either way.
- */
+/** One source character may fold to zero or several, so 'sourceIndex' maps back. */
 interface FoldedText {
   folded: string;
   sourceIndex: number[];
@@ -79,7 +60,6 @@ function foldText(text: string): FoldedText {
     index += char.length;
   }
 
-  // a match that runs to the very end can resolve its exclusive end.
   sourceIndex.push(text.length);
   return { folded, sourceIndex };
 }
@@ -103,18 +83,13 @@ function detectStyle(tokens: readonly string[]): TokenizerStyle {
 }
 
 interface PieceShape {
-  /** Literal segments to match, in order, separated by word boundaries. */
   segments: string[];
-  /** Whether a whitespace run may be consumed before the first segment. */
   boundaryBefore: boolean;
 }
 
 /**
- * Split a raw token into the literal text it stands for.
- *
- * Metaspace pieces may contain '▁' internally: this tokenizer's normalizer
- * rewrites runs of two or more spaces to a literal '▁' before pre-tokenization,
- * so '▁a▁b' means "word boundary, 'a', whitespace run, 'b'".
+ * Metaspace pieces can contain '▁' internally: the normalizer rewrites runs of two
+ * or more spaces to a literal '▁', so '▁a▁b' is "boundary, a, spaces, b".
  */
 function pieceShape(token: string, style: TokenizerStyle): PieceShape {
   if (style === 'wordpiece') {
@@ -134,13 +109,7 @@ function skipWhitespace(text: string, from: number): number {
   return index;
 }
 
-/**
- * Try to match 'segments' starting at source index 'from'.
- *
- * Returns the exclusive end index, or 'null' when the segments do not line up.
- * Matching happens in folded space so that '-uncased', accent-stripping
- * tokenizers still align against the original cased text.
- */
+/** Matches in folded space so '-uncased' tokenizers align against cased text. */
 function matchSegments(
   text: string,
   foldedText: FoldedText,
@@ -173,14 +142,9 @@ function matchSegments(
 }
 
 /**
- * Map every token in 'tokens' to its character range in 'text'.
- *
- * 'tokens' must be the tokenizer's complete output for 'text' (the same call
- * the model saw, special tokens included) so that indices line up with the
- * 'index' field on token-classification items.
- *
- * Returns one entry per token: a range, or 'null' for special tokens, empty
- * pieces, and any piece that could not be placed.
+ * 'tokens' must be the tokenizer's complete output for 'text' -- the same call the
+ * model saw, specials included -- so indices line up with an item's 'index'.
+ * Entries are 'null' for specials, empty pieces, and anything unplaceable.
  */
 export function alignTokensToText(
   text: string,
@@ -190,7 +154,6 @@ export function alignTokensToText(
   const style = detectStyle(tokens);
   const foldedText = foldText(text);
 
-  // Reverse of foldedText.sourceIndex: first folded position for a source index.
   const foldedStartBySource: number[] = new Array(text.length + 1).fill(-1);
   for (let foldedIndex = foldedText.sourceIndex.length - 1; foldedIndex >= 0; foldedIndex -= 1) {
     foldedStartBySource[foldedText.sourceIndex[foldedIndex]] = foldedIndex;
@@ -213,8 +176,7 @@ export function alignTokensToText(
 
     const { segments, boundaryBefore } = pieceShape(token, style);
     if (segments.length === 0) {
-      // Metaspace-only piece: it stands for whitespace, not content. Consume the
-      // whitespace so the next piece starts in the right place, but emit no range.
+      // Whitespace, not content: consume it but emit no range.
       if (boundaryBefore) cursor = skipWhitespace(text, cursor);
       ranges.push(null);
       continue;
@@ -229,9 +191,8 @@ export function alignTokensToText(
       boundaryBefore
     );
 
-    // Resync: an <unk> or a normalization we do not model consumed source
-    // characters we did not account for. Scan forward a bounded window rather
-    // than giving up on the rest of the sequence.
+    // An <unk> or unmodelled normalization ate characters; scan a bounded window
+    // rather than abandoning the rest of the sequence.
     if (!matched) {
       const limit = Math.min(text.length, cursor + RESYNC_WINDOW_CHARS);
       for (let probe = cursor + 1; probe <= limit; probe += 1) {
@@ -259,13 +220,7 @@ export function alignTokensToText(
   return ranges;
 }
 
-/**
- * Fraction of content-bearing tokens that were placed successfully.
- *
- * The provider uses this as a health check: if alignment degrades on some text
- * we have not anticipated, it is better to fall back than to emit spans at
- * confidently wrong positions.
- */
+/** Fraction of content-bearing tokens placed; the provider's gate for falling back. */
 export function alignmentCoverage(
   ranges: readonly (TokenCharRange | null)[],
   tokens: readonly string[]
@@ -275,8 +230,7 @@ export function alignmentCoverage(
   let content = 0;
   let placed = 0;
   ranges.forEach((range, index) => {
-    // A special token is aligned to null by design, so counting it as a failure
-    // would push short text under the gate and back onto the legacy search.
+    // Null by design; counting it as a failure would push short text under the gate.
     if (specialTokens.has(tokens[index])) return;
     content += 1;
     if (range) placed += 1;
