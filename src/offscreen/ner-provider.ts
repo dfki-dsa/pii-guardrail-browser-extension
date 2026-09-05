@@ -123,7 +123,10 @@ type TransformersModule = {
 
 /**
  * A navigator-like object that may expose WebGPU (optional).
- * See a full note in 'src/system-check/passive-signals.ts'.
+ *
+ * 'Partial<Navigator>' rather than an extension of it: the offscreen document's
+ * navigator is typed from whichever DOM lib is in scope, and only the members
+ * read here matter.
  */
 type NavigatorWithWebGpu = Partial<Navigator> & {
   gpu?: {
