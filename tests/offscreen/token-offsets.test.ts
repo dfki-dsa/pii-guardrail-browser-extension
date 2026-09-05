@@ -131,15 +131,24 @@ describe('alignTokensToText — resilience', () => {
 
   test('reports coverage so callers can refuse to trust a bad alignment', () => {
     const text = 'Erika Muster';
-    const good = alignTokensToText(text, ['▁Erika', '▁Muster']);
-    const bad = alignTokensToText(text, ['▁Zzz', '▁Qqq', '▁Www']);
+    const goodTokens = ['▁Erika', '▁Muster'];
+    const badTokens = ['▁Zzz', '▁Qqq', '▁Www'];
 
-    expect(alignmentCoverage(good)).toBe(1);
-    expect(alignmentCoverage(bad)).toBeLessThan(0.8);
+    expect(alignmentCoverage(alignTokensToText(text, goodTokens), goodTokens)).toBe(1);
+    expect(alignmentCoverage(alignTokensToText(text, badTokens), badTokens)).toBeLessThan(0.8);
+  });
+
+  test('does not count the special tokens the post-processor adds as failures', () => {
+    const text = 'Erika Muster';
+    const tokens = ['<s>', '▁Erika', '▁Muster', '</s>'];
+
+    // Every content piece is placed; only '<s>' and '</s>' align to null. Counting
+    // those against the ratio would drop short text under the provider's gate.
+    expect(alignmentCoverage(alignTokensToText(text, tokens), tokens)).toBe(1);
   });
 
   test('returns an empty result for empty input', () => {
     expect(alignTokensToText('', [])).toEqual([]);
-    expect(alignmentCoverage([])).toBe(1);
+    expect(alignmentCoverage([], [])).toBe(1);
   });
 });

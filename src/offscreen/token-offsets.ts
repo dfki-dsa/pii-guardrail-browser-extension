@@ -31,14 +31,6 @@ export interface TokenCharRange {
   end: number;
 }
 
-export interface AlignTokensOptions {
-  /**
-   * Tokens that stand for no source characters ('<s>', '</s>', '[CLS]', …).
-   * Matched exactly; anything listed here is aligned to `null`.
-   */
-  specialTokens?: readonly string[];
-}
-
 const DEFAULT_SPECIAL_TOKENS: readonly string[] = [
   '<s>',
   '</s>',
@@ -192,10 +184,9 @@ function matchSegments(
  */
 export function alignTokensToText(
   text: string,
-  tokens: readonly string[],
-  options: AlignTokensOptions = {}
+  tokens: readonly string[]
 ): (TokenCharRange | null)[] {
-  const specialTokens = new Set(options.specialTokens ?? DEFAULT_SPECIAL_TOKENS);
+  const specialTokens = new Set(DEFAULT_SPECIAL_TOKENS);
   const style = detectStyle(tokens);
   const foldedText = foldText(text);
 
@@ -275,8 +266,22 @@ export function alignTokensToText(
  * we have not anticipated, it is better to fall back than to emit spans at
  * confidently wrong positions.
  */
-export function alignmentCoverage(ranges: readonly (TokenCharRange | null)[]): number {
-  if (ranges.length === 0) return 1;
-  const placed = ranges.reduce<number>((count, range) => count + (range ? 1 : 0), 0);
-  return placed / ranges.length;
+export function alignmentCoverage(
+  ranges: readonly (TokenCharRange | null)[],
+  tokens: readonly string[]
+): number {
+  const specialTokens = new Set(DEFAULT_SPECIAL_TOKENS);
+
+  let content = 0;
+  let placed = 0;
+  ranges.forEach((range, index) => {
+    // A special token is aligned to null by design, so counting it as a failure
+    // would push short text under the gate and back onto the legacy search.
+    if (specialTokens.has(tokens[index])) return;
+    content += 1;
+    if (range) placed += 1;
+  });
+
+  if (content === 0) return 1;
+  return placed / content;
 }
