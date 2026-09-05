@@ -1144,6 +1144,79 @@ const EMAIL_DOMAIN_TAIL_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
   'MISC',
 ]);
 
+/**
+ * Longest mislabelled stretch we will bridge inside a single identifier.
+ */
+const MAX_INTRA_RUN_GAP_CHARS = 16;
+
+/**
+ * Characters that can sit *inside* one identifier.
+ *
+ * Deliberately excludes every separator -- whitespace, comma, bracket, slash,
+ * semicolon -- so a bridge can only ever close a gap within one value, never
+ * reach across the boundary between two of them.
+ */
+const INTRA_RUN_BRIDGE_PATTERN = /^[\p{L}\p{N}_.\-+@]*$/u;
+
+function isBridgeableGap(bridge: string): boolean {
+  return bridge.length <= MAX_INTRA_RUN_GAP_CHARS && INTRA_RUN_BRIDGE_PATTERN.test(bridge);
+}
+
+/** How far back a bridge may reach for the span it rejoins. */
+const INTRA_RUN_LOOKBACK_SPANS = 3;
+
+/**
+ * Rejoin same-type spans that a mislabelled slice split apart mid-identifier.
+ *
+ * Grouping already bridges an unlabelled gap, but the model sometimes drops a
+ * different label into the middle instead, and that middle span then falls under
+ * its own threshold. Left split, the anonymizer redacts both ends and publishes
+ * the middle in the clear: 't.tester@example.invalid' becomes a redacted 't.',
+ * an exposed 'tester', and a redacted '@example.invalid'.
+ *
+ * The bridge must be identifier interior only. An earlier form asked merely for
+ * no whitespace, which also joined 'a@b.example,c@d.example' and two people
+ * written 'Mueller,Schmidt' into one span, giving one placeholder for two
+ * distinct values.
+ */
+function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
+  const out: PiiSpan[] = [];
+
+  for (const span of spans) {
+    let mergedInto = -1;
+
+    for (let i = out.length - 1; i >= 0 && i >= out.length - INTRA_RUN_LOOKBACK_SPANS; i -= 1) {
+      const candidate = out[i];
+      if (candidate.entity_type !== span.entity_type || candidate.end > span.start) continue;
+
+      // An empty bridge counts: completing partial words can leave two halves of
+      // one identifier flush against each other with the mislabelled slice
+      // overlapping them both.
+      if (!isBridgeableGap(sliceTextByByteOffsets(text, candidate.end, span.start))) continue;
+
+      candidate.end = span.end;
+      candidate.text = sliceTextByByteOffsets(text, candidate.start, candidate.end);
+      mergedInto = i;
+      break;
+    }
+
+    if (mergedInto === -1) {
+      out.push(span);
+      continue;
+    }
+
+    // Anything the merge swallowed is no longer its own span.
+    const absorber = out[mergedInto];
+    out.splice(
+      mergedInto + 1,
+      out.length - mergedInto - 1,
+      ...out.slice(mergedInto + 1).filter((other) => other.end > absorber.end)
+    );
+  }
+
+  return out;
+}
+
 function stitchEmailDomains(text: string, spans: PiiSpan[]): PiiSpan[] {
   const stitched: PiiSpan[] = [];
 
@@ -1249,7 +1322,7 @@ export function alignedTokensToSpans(
   }
   flush();
 
-  return stitchEmailDomains(text, grouped);
+  return stitchEmailDomains(text, closeIntraRunGaps(text, grouped));
 }
 
 export function transformerOutputToSpans(
