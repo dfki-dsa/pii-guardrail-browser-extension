@@ -145,10 +145,13 @@ function matchSegments(
  * 'tokens' must be the tokenizer's complete output for 'text' -- the same call the
  * model saw, specials included -- so indices line up with an item's 'index'.
  * Entries are 'null' for specials, empty pieces, and anything unplaceable.
+ * Set addSpecialTokens:false when aligning pieces without the post-processor's
+ * boundary tokens, so a literal '<s>' at the start is still consumed.
  */
 export function alignTokensToText(
   text: string,
-  tokens: readonly string[]
+  tokens: readonly string[],
+  options: { addSpecialTokens?: boolean } = {}
 ): (TokenCharRange | null)[] {
   const specialTokens = new Set(DEFAULT_SPECIAL_TOKENS);
   const style = detectStyle(tokens);
@@ -168,8 +171,18 @@ export function alignTokensToText(
   const ranges: (TokenCharRange | null)[] = [];
   let cursor = 0;
 
-  for (const token of tokens) {
+  for (const [index, token] of tokens.entries()) {
     if (specialTokens.has(token)) {
+      const insertedBoundary = options.addSpecialTokens !== false && (
+        (index === 0 && (token === '<s>' || token === '[CLS]')) ||
+        (index === tokens.length - 1 && (token === '</s>' || token === '[SEP]'))
+      );
+      // A literal control token occupies source text even though the classifier
+      // emits no prediction for it. Do not resync into its spelling later.
+      const literalStart = skipWhitespace(text, cursor);
+      if (!insertedBoundary && text.startsWith(token, literalStart)) {
+        cursor = literalStart + token.length;
+      }
       ranges.push(null);
       continue;
     }
@@ -231,7 +244,7 @@ export function alignmentCoverage(
   let placed = 0;
   ranges.forEach((range, index) => {
     // Null by design; counting it as a failure would push short text under the gate.
-    if (specialTokens.has(tokens[index])) return;
+    if (specialTokens.has(tokens[index]) || /^▁+$/.test(tokens[index])) return;
     content += 1;
     if (range) placed += 1;
   });

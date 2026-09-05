@@ -152,3 +152,41 @@ describe('alignTokensToText — resilience', () => {
     expect(alignmentCoverage([], [])).toBe(1);
   });
 });
+
+describe('literal special tokens', () => {
+  test('consumes a literal mask before locating the following word', () => {
+    const text = 'Bob <mask> mask Müller ist heute hier.';
+    const tokens = ['<s>', '▁Bob', '<mask>', '▁mask', '▁Müller', '▁ist', '▁heute', '▁hier', '.', '</s>'];
+    expect(alignTokensToText(text, tokens)[3]).toEqual({ start: 11, end: 15 });
+  });
+
+  test('distinguishes an inserted start token from a literal one at the start', () => {
+    const text = '<s> s Anna';
+    const tokens = ['<s>', '<s>', '▁s', '▁Anna', '</s>'];
+    expect(alignTokensToText(text, tokens)[2]).toEqual({ start: 4, end: 5 });
+  });
+
+  test('consumes literal boundary tokens when post-processing was disabled', () => {
+    const text = '<s> s Anna';
+    const tokens = ['<s>', '▁s', '▁Anna'];
+    expect(alignTokensToText(text, tokens, { addSpecialTokens: false })[1])
+      .toEqual({ start: 4, end: 5 });
+  });
+
+  test('consumes a literal end token before a matching word', () => {
+    const text = 'Bob </s> s Anna';
+    const tokens = ['<s>', '▁Bob', '</s>', '▁s', '▁Anna', '</s>'];
+    expect(alignTokensToText(text, tokens)[3]).toEqual({ start: 9, end: 10 });
+  });
+
+  test('consumes a WordPiece mask before locating a following matching word', () => {
+    const text = 'Bob [MASK] mask Müller';
+    const tokens = ['[CLS]', 'bob', '[MASK]', 'mask', 'mü', '##ller', '[SEP]'];
+    expect(alignTokensToText(text, tokens)[3]).toEqual({ start: 11, end: 15 });
+  });
+
+  test('does not treat whitespace-only Metaspace pieces as alignment failures', () => {
+    const tokens = ['<s>', '▁', '☃', '▁', '☃', '</s>'];
+    expect(alignmentCoverage(alignTokensToText('☃ ☃', tokens), tokens)).toBe(1);
+  });
+});

@@ -2,6 +2,7 @@ import {
   alignedTokensToSpans,
   applyNerThresholdPolicy,
   chunkTextByTokens,
+  chunkTextForNer,
   createTransformersNerProvider,
   resetNerProviderCachesForTests,
   type NerTokenizerLike,
@@ -239,6 +240,66 @@ describe('alignedTokensToSpans — grouping rules', () => {
     expect(spans.map((span) => span.text)).toContain('t.tester@example.invalid');
   });
 
+  test('keeps a repaired identifier above threshold when its tail is confident', () => {
+    const text = 'pin.secret.code';
+    const spans = build(text, ['▁pin', '.', 'secret', '.', 'code'], {
+      0: ['B-AUTH_SECRET', 0.4], 1: ['B-AUTH_SECRET', 0.4],
+      2: ['B-ACCOUNT_IDENTIFIER', 0.99],
+      3: ['B-AUTH_SECRET', 0.99], 4: ['B-AUTH_SECRET', 0.99],
+    });
+    expect(applyNerThresholdPolicy(spans, 'bardsai')).toEqual([
+      expect.objectContaining({ text, entity_type: 'PASSWORD', score: 0.99 }),
+    ]);
+  });
+
+  test('preserves a passing middle when neither endpoint can support a repair', () => {
+    const spans = build('pin.secret.code', ['▁pin', '.', 'secret', '.', 'code'], {
+      0: ['B-AUTH_SECRET', 0.4], 1: ['B-AUTH_SECRET', 0.4],
+      2: ['B-ACCOUNT_IDENTIFIER', 0.99],
+      3: ['B-AUTH_SECRET', 0.4], 4: ['B-AUTH_SECRET', 0.4],
+    });
+    expect(applyNerThresholdPolicy(spans, 'bardsai')).toEqual([
+      expect.objectContaining({ text: 'secret', entity_type: 'USERNAME' }),
+    ]);
+  });
+
+  test('scores each word in a name instead of dropping confident later words', () => {
+    const spans = build('Ada Lovelace', ['▁Ada', '▁Love', 'lace'], {
+      0: ['B-PERSON_NAME', 0.5], 1: ['I-PERSON_NAME', 0.99], 2: ['I-PERSON_NAME', 0.99],
+    });
+    expect(applyNerThresholdPolicy(spans, 'bardsai')).toEqual([
+      expect.objectContaining({ text: 'Ada Lovelace', entity_type: 'PERSON' }),
+    ]);
+  });
+
+  test('stitches only the domain and keeps the following company separate', () => {
+    const text = 'a@example.invalid Müller GmbH';
+    const spans = build(text, ['▁a', '@', 'example', '.', 'invalid', '▁Müller', '▁GmbH'], {
+      0: ['B-EMAIL_ADDRESS', 0.99],
+      2: ['B-ORGANIZATION_NAME', 0.95], 3: ['I-ORGANIZATION_NAME', 0.95],
+      4: ['I-ORGANIZATION_NAME', 0.95], 5: ['B-ORGANIZATION_NAME', 0.99],
+      6: ['I-ORGANIZATION_NAME', 0.99],
+    });
+    expect(applyNerThresholdPolicy(spans, 'bardsai')).toEqual([
+      expect.objectContaining({ text: 'a@example.invalid', entity_type: 'EMAIL' }),
+      expect.objectContaining({ text: 'Müller GmbH', entity_type: 'ORGANIZATION' }),
+    ]);
+    for (const span of spans) {
+      expect(sliceTextByByteOffsets(text, span.start, span.end)).toBe(span.text);
+    }
+  });
+
+  test('does not lose a passing domain to a failing email stitch', () => {
+    const spans = build('a@example.invalid', ['▁a', '@', 'example', '.', 'invalid'], {
+      0: ['B-EMAIL_ADDRESS', 0.4],
+      2: ['B-ORGANIZATION_NAME', 0.99], 3: ['I-ORGANIZATION_NAME', 0.99],
+      4: ['I-ORGANIZATION_NAME', 0.99],
+    });
+    expect(applyNerThresholdPolicy(spans, 'bardsai')).toEqual([
+      expect.objectContaining({ text: 'example.invalid', entity_type: 'ORGANIZATION' }),
+    ]);
+  });
+
   test('completes a half-labelled word but stops at a non-word boundary', () => {
     const text = 'Muster schrieb an max.muster@example.invalid';
     const tokens = ['▁Must', 'er', '▁schrieb', '▁an', '▁max', '.', 'mu', 'ster', '@', 'ex', 'a', 'mple', '.', 'in', 'vali', 'd'];
@@ -275,6 +336,21 @@ describe('alignedTokensToSpans — grouping rules', () => {
     expect(
       alignedTokensToSpans('Erika Muster', [{ entity_group: 'PERSON_NAME', score: 0.99, word: 'Erika' }], ranges)
     ).toEqual([]);
+  });
+});
+
+describe('character fallback Unicode boundaries', () => {
+  test.each([1, 3, 5])('preserves code points and byte offsets with a %i-character budget', (maxChunkChars) => {
+    const text = '😀😀 Müller 😀';
+    const chunks = chunkTextForNer(text, { maxChunkChars, overlapChars: 1 });
+    let coveredUntil = 0;
+    for (const chunk of chunks) {
+      expect(chunk.startChar).toBeLessThanOrEqual(coveredUntil);
+      coveredUntil = Math.max(coveredUntil, chunk.endChar);
+      expect(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/u.test(chunk.text)).toBe(false);
+      expect(sliceTextByByteOffsets(text, chunk.startByte, chunk.endByte)).toBe(chunk.text);
+    }
+    expect(coveredUntil).toBe(text.length);
   });
 });
 
@@ -414,6 +490,56 @@ describe('transformers provider — offset path selection', () => {
     expect(spans).toEqual([
       expect.objectContaining({ entity_type: 'EMAIL', text: 'info@example.invalid', score: 0.99 }),
     ]);
+  });
+
+  test('checks every final inference input even when alignment fails', async () => {
+    const text = '☃ '.repeat(260) + 'Anna Müller' + ' ☃'.repeat(740);
+    const inputs: string[] = [];
+    // Each symbol costs two positions, but normalization prevents the aligner
+    // from placing it. The name sits in the old 800-character fallback's blind spot.
+    const tokenizer: NerTokenizerLike = {
+      model_max_length: 512,
+      tokenize(input, options) {
+        const pieces = input.match(/☃|Anna|Müller/g)?.flatMap((word) =>
+          word === '☃' ? ['▁', 'unplaceable-symbol'] : [`▁${word}`]
+        ) ?? [];
+        return options?.add_special_tokens ? ['<s>', ...pieces, '</s>'] : pieces;
+      },
+    };
+    const classifier: any = jest.fn(async (input: string, options: any) => {
+      inputs.push(input);
+      expect(tokenizer.tokenize(input, { add_special_tokens: true }).length).toBeLessThanOrEqual(512);
+      if (!input.includes('Anna Müller')) return [];
+      const pieces = tokenizer.tokenize(input, { add_special_tokens: true });
+      return options.aggregation_strategy === 'none'
+        ? [
+            { index: pieces.indexOf('▁Anna'), entity: 'B-PERSON_NAME', score: 0.99, word: 'Anna' },
+            { index: pieces.indexOf('▁Müller'), entity: 'I-PERSON_NAME', score: 0.99, word: 'Müller' },
+          ]
+        : [{ entity_group: 'PERSON_NAME', score: 0.99, word: 'Anna Müller' }];
+    });
+    classifier.tokenizer = tokenizer;
+    const provider = createTransformersNerProvider({
+      modelKey: 'bardsai', getExtensionUrl: extensionUrl,
+      assetExists: async () => true, detectWebGpu: async () => false,
+      loadTransformers: async () => ({ env: makeEnv(), pipeline: async () => classifier }),
+    });
+    const spans = await provider.detect(text);
+    expect(spans).toEqual([expect.objectContaining({ text: 'Anna Müller', entity_type: 'PERSON' })]);
+    expect(sliceTextByByteOffsets(text, spans[0].start, spans[0].end)).toBe('Anna Müller');
+    expect(inputs.length).toBeGreaterThan(1);
+  });
+
+  test('does not classify an unverified input when tokenization throws', async () => {
+    const classifier: any = jest.fn().mockResolvedValue([]);
+    classifier.tokenizer = { tokenize: () => { throw new Error('broken tokenizer'); } };
+    const provider = createTransformersNerProvider({
+      modelKey: 'bardsai', getExtensionUrl: extensionUrl,
+      assetExists: async () => true, detectWebGpu: async () => false,
+      loadTransformers: async () => ({ env: makeEnv(), pipeline: async () => classifier }),
+    });
+    await expect(provider.detect('Anna Müller')).rejects.toThrow(/token/i);
+    expect(classifier).not.toHaveBeenCalled();
   });
 
   test('falls back to aggregated output when the pipeline exposes no tokenizer', async () => {

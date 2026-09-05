@@ -440,6 +440,14 @@ function chunkBoundaryEnd(text: string, start: number, targetEnd: number, maxChu
   return targetEnd;
 }
 
+function codePointBoundaryAtOrBefore(text: string, index: number): number {
+  const current = text.charCodeAt(index);
+  const previous = text.charCodeAt(index - 1);
+  return current >= 0xdc00 && current <= 0xdfff && previous >= 0xd800 && previous <= 0xdbff
+    ? index - 1
+    : index;
+}
+
 export function chunkTextForNer(
   text: string,
   options: NerChunkingOptions = {}
@@ -461,7 +469,10 @@ export function chunkTextForNer(
 
   while (startChar < text.length) {
     const targetEnd = Math.min(text.length, startChar + maxChunkChars);
-    const endChar = chunkBoundaryEnd(text, startChar, targetEnd, maxChunkChars);
+    const firstCodePointEnd = startChar + String.fromCodePoint(text.codePointAt(startChar)!).length;
+    const endChar = Math.max(firstCodePointEnd, codePointBoundaryAtOrBefore(
+      text, chunkBoundaryEnd(text, startChar, targetEnd, maxChunkChars)
+    ));
     const startByte = byteLength(text.slice(0, startChar));
     const endByte = byteLength(text.slice(0, endChar));
     chunks.push({
@@ -473,7 +484,7 @@ export function chunkTextForNer(
     });
 
     if (endChar >= text.length) break;
-    startChar = Math.max(startChar + 1, endChar - boundedOverlap);
+    startChar = codePointBoundaryAtOrBefore(text, Math.max(firstCodePointEnd, endChar - boundedOverlap));
   }
 
   return chunks;
@@ -560,7 +571,7 @@ export function chunkTextByTokens(
     return null;
   }
 
-  const ranges = alignTokensToText(text, pieces);
+  const ranges = alignTokensToText(text, pieces, { addSpecialTokens: false });
   if (!ranges.some((range) => range !== null)) return null;
 
   if (alignmentCoverage(ranges, pieces) < MIN_ALIGNMENT_COVERAGE) return null;
@@ -602,6 +613,37 @@ export function chunkTextByTokens(
   }
 
   return chunks;
+}
+
+/** Retokenize the exact input: slicing and failed alignment can change its budget. */
+function fitChunkToTokenBudget(
+  chunk: NerTextChunk,
+  tokenizer: NerTokenizerLike,
+  maxPositions: number
+): NerTextChunk[] {
+  const pieces = safeTokenize(tokenizer, chunk.text);
+  if (!pieces) throw new Error('Unable to verify the Local AI input token limit.');
+  if (pieces.length <= maxPositions) return [chunk];
+
+  const characters = Array.from(chunk.text);
+  if (characters.length < 2) {
+    throw new Error('A source character exceeds the Local AI input token limit.');
+  }
+  const middle = Math.floor(characters.length / 2);
+  const overlap = Math.min(Math.floor(DEFAULT_NER_CHUNK_OVERLAP_CHARS / 2), Math.floor(characters.length / 4));
+  const leftEnd = characters.slice(0, middle + overlap).join('').length;
+  const rightStart = characters.slice(0, middle - overlap).join('').length;
+
+  return [[0, leftEnd], [rightStart, chunk.text.length]].flatMap(([start, end]) => {
+    const part: NerTextChunk = {
+      text: chunk.text.slice(start, end),
+      startChar: chunk.startChar + start,
+      endChar: chunk.startChar + end,
+      startByte: chunk.startByte + byteLength(chunk.text.slice(0, start)),
+      endByte: chunk.startByte + byteLength(chunk.text.slice(0, end)),
+    };
+    return fitChunkToTokenBudget(part, tokenizer, maxPositions);
+  });
 }
 
 function shiftSpanToOriginalText(span: PiiSpan, chunk: NerTextChunk): PiiSpan {
@@ -1101,7 +1143,7 @@ const INTRA_RUN_LOOKBACK_SPANS = 3;
  * When that middle falls under its own threshold, both ends are redacted and
  * 'tester' of 't.tester@example.invalid' is left in the clear.
  */
-function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
+function closeIntraRunGaps(text: string, spans: PiiSpan[], modelKey: NerModelKey): PiiSpan[] {
   const out: PiiSpan[] = [];
 
   for (const span of spans) {
@@ -1114,6 +1156,11 @@ function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
       // An empty bridge counts: the two halves can end up flush.
       if (!isBridgeableGap(sliceTextByByteOffsets(text, candidate.end, span.start))) continue;
 
+      // Same-type evidence may support the whole repair, but a failing repair
+      // must never delete a passing differently labelled middle.
+      const score = Math.max(candidate.score, span.score);
+      if (!passesNerThreshold({ ...candidate, score }, modelKey)) continue;
+      candidate.score = score;
       candidate.end = span.end;
       candidate.text = sliceTextByByteOffsets(text, candidate.start, candidate.end);
       mergedInto = i;
@@ -1136,7 +1183,7 @@ function closeIntraRunGaps(text: string, spans: PiiSpan[]): PiiSpan[] {
   return out;
 }
 
-function stitchEmailDomains(text: string, spans: PiiSpan[]): PiiSpan[] {
+function stitchEmailDomains(text: string, spans: PiiSpan[], modelKey: NerModelKey): PiiSpan[] {
   const stitched: PiiSpan[] = [];
 
   for (const span of spans) {
@@ -1149,9 +1196,20 @@ function stitchEmailDomains(text: string, spans: PiiSpan[]): PiiSpan[] {
     ) {
       const gap = sliceTextByByteOffsets(text, previous.end, span.start);
       const joinsAddress = gap === '@' || (gap === '' && previous.text.endsWith('@'));
-      if (joinsAddress) {
-        previous.end = span.end;
+      const domain = /^[\p{L}\p{N}](?:[\p{L}\p{N}.\-]*[\p{L}\p{N}])?/u.exec(span.text)?.[0];
+      if (joinsAddress && domain && passesNerThreshold(previous, modelKey)) {
+        previous.end = span.start + byteLength(domain);
         previous.text = sliceTextByByteOffsets(text, previous.start, previous.end);
+        const remainder = span.text.slice(domain.length);
+        const leadingSpace = /^\s*/u.exec(remainder)![0].length;
+        const remainingText = remainder.slice(leadingSpace);
+        if (/[\p{L}\p{N}]/u.test(remainingText)) {
+          stitched.push({
+            ...span,
+            start: previous.end + byteLength(remainder.slice(0, leadingSpace)),
+            text: remainingText,
+          });
+        }
         continue;
       }
     }
@@ -1169,9 +1227,9 @@ function stitchEmailDomains(text: string, spans: PiiSpan[]): PiiSpan[] {
  * 'item.index' addresses it directly. Grouping is by entity type and source
  * adjacency, not the model's BIO prefixes.
  *
- * A group scores from its opening token ('first' strategy): confidence decays across
- * continuation pieces -- 'firstName.lastName@' scores [0.999, 0.999, 0.473, 0.670,
- * 0.586, 0.631] -- so averaging would drop a genuine address under the email gate.
+ * Use the opening score within each whitespace-delimited word, then average the
+ * word scores. Email continuation scores decay, but a weak opening word must not
+ * determine the confidence of an entire multiword name or organization.
  */
 export function alignedTokensToSpans(
   text: string,
@@ -1197,7 +1255,7 @@ export function alignedTokensToSpans(
   predictions.sort((a, b) => a.range.start - b.range.start || a.range.end - b.range.end);
 
   const grouped: PiiSpan[] = [];
-  let current: { prediction: AlignedTokenPrediction; end: number } | null = null;
+  let current: { prediction: AlignedTokenPrediction; end: number; wordScores: number[] } | null = null;
 
   const flush = (): void => {
     if (!current) return;
@@ -1209,7 +1267,7 @@ export function alignedTokensToSpans(
       start: stringIndexToByteOffset(text, range.start),
       end: stringIndexToByteOffset(text, range.end),
       entity_type: current.prediction.entityType,
-      score: current.prediction.score,
+      score: current.wordScores.reduce((sum, score) => sum + score, 0) / current.wordScores.length,
       text: text.slice(range.start, range.end),
       source: 'ner',
       nerRawLabel: current.prediction.rawLabel,
@@ -1219,7 +1277,7 @@ export function alignedTokensToSpans(
 
   for (const prediction of predictions) {
     if (!current) {
-      current = { prediction, end: prediction.range.end };
+      current = { prediction, end: prediction.range.end, wordScores: [prediction.score] };
       continue;
     }
 
@@ -1229,16 +1287,17 @@ export function alignedTokensToSpans(
       : '';
 
     if (sameType && prediction.range.start >= current.prediction.range.start && isJoinableGap(gap)) {
+      if (/\s/u.test(gap)) current.wordScores.push(prediction.score);
       current.end = Math.max(current.end, prediction.range.end);
       continue;
     }
 
     flush();
-    current = { prediction, end: prediction.range.end };
+    current = { prediction, end: prediction.range.end, wordScores: [prediction.score] };
   }
   flush();
 
-  return stitchEmailDomains(text, closeIntraRunGaps(text, grouped));
+  return stitchEmailDomains(text, closeIntraRunGaps(text, grouped, modelKey), modelKey);
 }
 
 export function transformerOutputToSpans(
@@ -1359,20 +1418,20 @@ export function createTransformersNerProvider(
   }
 
   function planChunks(text: string, tokenizer: NerTokenizerLike | undefined): NerTextChunk[] {
-    if (tokenizer) {
-      const tokenChunks = chunkTextByTokens(text, tokenizer, {
-        maxTokens: tokenLimitFor(tokenizer),
-      });
-      if (tokenChunks) return tokenChunks;
-      debugLog('[PG:ner] detect: token chunking unavailable, falling back to characters');
-    }
-
-    // No tokenizer to measure with, so cap on characters pessimistically rather
-    // than letting a long paste run past the encoder's 512 positions unseen.
-    return chunkTextForNer(text, {
+    const tokenChunks = tokenizer ? chunkTextByTokens(text, tokenizer, {
+      maxTokens: tokenLimitFor(tokenizer),
+    }) : null;
+    const chunks = tokenChunks ?? chunkTextForNer(text, {
       ...chunking,
       maxChunkChars: Math.min(chunking?.maxChunkChars ?? MAX_TEXT_LENGTH, FALLBACK_MAX_CHUNK_CHARS),
     });
+    if (!tokenizer) return chunks;
+
+    // Alignment is optional for choosing boundaries, never for enforcing the
+    // encoder limit. A tokenization failure propagates as Local AI unavailable.
+    return chunks.flatMap((chunk) => fitChunkToTokenBudget(
+      chunk, tokenizer, tokenLimitFor(tokenizer) + SPECIAL_TOKEN_BUDGET
+    ));
   }
 
   async function detectChunked(
