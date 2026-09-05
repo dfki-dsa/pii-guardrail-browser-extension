@@ -535,6 +535,44 @@ function tokenLimitFor(tokenizer: NerTokenizerLike): number {
  * word in half and no source character is dropped: alignTokensToText places
  * every content token, and consecutive chunks are joined end-to-start.
  */
+/**
+ * Character offset a chunk beginning at 'index' should open on.
+ *
+ * 'index' can itself be an unplaced token, so scan forward for the first placed
+ * one. That offset is never past the previous chunk's end — the previous
+ * boundary is a placed token at or after 'index' — so the chunks still meet.
+ */
+function chunkStartChar(ranges: readonly (TokenCharRange | null)[], index: number): number {
+  for (let i = index; i < ranges.length; i += 1) {
+    const range = ranges[i];
+    if (range) return range.start;
+  }
+  return 0;
+}
+
+/**
+ * Index of the token a chunk should close on, given the end its budget allows.
+ *
+ * A chunk is cut at character offsets, so the boundary has to sit on a token the
+ * aligner actually placed. Preferring the last placed token at or before the
+ * budget keeps the chunk within it; only when an unplaced run swallows the whole
+ * window do we step past the budget instead, which costs a few encoder positions
+ * but never drops those characters from every chunk.
+ */
+function chunkBoundaryIndex(
+  ranges: readonly (TokenCharRange | null)[],
+  tokenStart: number,
+  tokenEnd: number
+): number {
+  for (let i = Math.min(tokenEnd, ranges.length - 1); i > tokenStart; i -= 1) {
+    if (ranges[i]) return i;
+  }
+  for (let i = tokenEnd + 1; i < ranges.length; i += 1) {
+    if (ranges[i]) return i;
+  }
+  return ranges.length;
+}
+
 export function chunkTextByTokens(
   text: string,
   tokenizer: NerTokenizerLike,
@@ -555,13 +593,12 @@ export function chunkTextByTokens(
   }
 
   const ranges = alignTokensToText(text, pieces);
-  const placed = ranges.filter((range): range is TokenCharRange => range !== null);
-  if (placed.length === 0) return null;
+  if (!ranges.some((range) => range !== null)) return null;
 
   // sanity gate: if we could not place most of the tokens we do not trust
   // the boundaries either, and the caller should fall back to character chunks.
   if (alignmentCoverage(ranges, pieces) < MIN_ALIGNMENT_COVERAGE) return null;
-  if (placed.length <= maxTokens) {
+  if (pieces.length <= maxTokens) {
     return [
       {
         text,
@@ -576,8 +613,12 @@ export function chunkTextByTokens(
   const chunks: NerTextChunk[] = [];
   let tokenStart = 0;
 
-  while (tokenStart < placed.length) {
-    const tokenEnd = Math.min(placed.length, tokenStart + maxTokens);
+  // The budget counts every tokenizer piece, not only the ones we could place.
+  // An unplaced piece — an <unk>, a dropped or zero-width character — still
+  // occupies an encoder position, so measuring the chunk by placed tokens alone
+  // would let it overrun the very limit this function exists to respect.
+  while (tokenStart < pieces.length) {
+    const tokenEnd = Math.min(pieces.length, tokenStart + maxTokens);
     // Close each chunk at the *next* chunk's first token rather than at its own
     // last one, so consecutive chunks meet with no gap. Characters between
     // tokens have no boundary of their own — whitespace, but also anything the
@@ -586,8 +627,9 @@ export function chunkTextByTokens(
     // silently unscanned. Every character lands in at least one chunk; with
     // overlapTokens > 0 the shared region is deliberately in two, and
     // mergeOverlappingNerSpans dedupes the results.
-    const startChar = tokenStart === 0 ? 0 : placed[tokenStart].start;
-    const endChar = tokenEnd >= placed.length ? text.length : placed[tokenEnd].start;
+    const boundary = tokenEnd >= pieces.length ? pieces.length : chunkBoundaryIndex(ranges, tokenStart, tokenEnd);
+    const startChar = tokenStart === 0 ? 0 : chunkStartChar(ranges, tokenStart);
+    const endChar = boundary >= pieces.length ? text.length : ranges[boundary]!.start;
 
     chunks.push({
       text: text.slice(startChar, endChar),
@@ -597,8 +639,8 @@ export function chunkTextByTokens(
       endByte: byteLength(text.slice(0, endChar)),
     });
 
-    if (tokenEnd >= placed.length) break;
-    tokenStart = Math.max(tokenStart + 1, tokenEnd - overlapTokens);
+    if (boundary >= pieces.length) break;
+    tokenStart = Math.max(tokenStart + 1, boundary - overlapTokens);
   }
 
   return chunks;

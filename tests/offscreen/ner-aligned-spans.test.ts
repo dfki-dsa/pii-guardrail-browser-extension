@@ -270,6 +270,32 @@ describe('chunkTextByTokens', () => {
     }
   });
 
+  test('counts pieces the aligner could not place against the chunk budget', () => {
+    // Every sixth word comes back as <unk>, which the aligner cannot place but
+    // the encoder still charges a position for. Budgeting by placed tokens alone
+    // let a nominal 40-token chunk carry ~48 real pieces.
+    const unkTokenizer: NerTokenizerLike = {
+      model_max_length: 512,
+      tokenize(text: string): string[] {
+        return text
+          .split(/(\s+)/)
+          .filter((part) => part.trim().length > 0)
+          .map((word, index) => (index % 6 === 5 ? '<unk>' : `\u2581${word}`));
+      },
+    };
+
+    const text = Array.from({ length: 300 }, (_, i) => `wort${i}`).join(' ');
+    const chunks = chunkTextByTokens(text, unkTokenizer, { maxTokens: 40, overlapTokens: 5 })!;
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(unkTokenizer.tokenize(chunk.text).length).toBeLessThanOrEqual(40);
+    }
+    // and still no source character falls outside every chunk
+    expect(chunks[0].startChar).toBe(0);
+    expect(chunks[chunks.length - 1].endChar).toBe(text.length);
+  });
+
   test('returns null when the tokenizer throws so the caller can fall back', () => {
     const throwing: NerTokenizerLike = {
       tokenize() {
