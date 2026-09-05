@@ -1156,8 +1156,16 @@ function closeIntraRunGaps(text: string, spans: PiiSpan[], modelKey: NerModelKey
       // An empty bridge counts: the two halves can end up flush.
       if (!isBridgeableGap(sliceTextByByteOffsets(text, candidate.end, span.start))) continue;
 
-      // Same-type evidence may support the whole repair, but a failing repair
-      // must never delete a passing differently labelled middle.
+      // A confident conflicting label is independent evidence, not a gap to
+      // repair. Keep it separate instead of replacing its identity with ours.
+      const hasPassingMiddle = out.slice(i + 1).some((other) =>
+        other.entity_type !== candidate.entity_type &&
+        other.start < span.end && other.end > candidate.start &&
+        passesNerThreshold(other, modelKey)
+      );
+      if (hasPassingMiddle) continue;
+
+      // Same-type evidence may support a repair over unlabelled or weak pieces.
       const score = Math.max(candidate.score, span.score);
       if (!passesNerThreshold({ ...candidate, score }, modelKey)) continue;
       candidate.score = score;

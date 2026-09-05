@@ -240,11 +240,39 @@ describe('alignedTokensToSpans — grouping rules', () => {
     expect(spans.map((span) => span.text)).toContain('t.tester@example.invalid');
   });
 
+  test.each([0.6, 0.99])('preserves a middle username at confidence %s between passing passwords', (score) => {
+    const text = 'pin.secret.code';
+    const spans = build(text, ['▁pin', '.', 'secret', '.', 'code'], {
+      0: ['B-AUTH_SECRET', 0.99], 1: ['B-AUTH_SECRET', 0.99],
+      2: ['B-ACCOUNT_IDENTIFIER', score],
+      3: ['B-AUTH_SECRET', 0.99], 4: ['B-AUTH_SECRET', 0.99],
+    });
+    const passing = applyNerThresholdPolicy(spans, 'bardsai');
+    expect(passing).toEqual([
+      expect.objectContaining({ start: 0, end: 4, text: 'pin.', entity_type: 'PASSWORD' }),
+      expect.objectContaining({ start: 4, end: 10, text: 'secret', entity_type: 'USERNAME', score }),
+      expect.objectContaining({ start: 10, end: 15, text: '.code', entity_type: 'PASSWORD' }),
+    ]);
+    expect(passing.map((span) => span.text).join('')).toBe(text);
+  });
+
+  test('preserves a passing middle even when only the password tail is confident', () => {
+    const spans = build('pin.secret.code', ['▁pin', '.', 'secret', '.', 'code'], {
+      0: ['B-AUTH_SECRET', 0.4], 1: ['B-AUTH_SECRET', 0.4],
+      2: ['B-ACCOUNT_IDENTIFIER', 0.99],
+      3: ['B-AUTH_SECRET', 0.99], 4: ['B-AUTH_SECRET', 0.99],
+    });
+    expect(applyNerThresholdPolicy(spans, 'bardsai')).toEqual([
+      expect.objectContaining({ text: 'secret', entity_type: 'USERNAME', score: 0.99 }),
+      expect.objectContaining({ text: '.code', entity_type: 'PASSWORD', score: 0.99 }),
+    ]);
+  });
+
   test('keeps a repaired identifier above threshold when its tail is confident', () => {
     const text = 'pin.secret.code';
     const spans = build(text, ['▁pin', '.', 'secret', '.', 'code'], {
       0: ['B-AUTH_SECRET', 0.4], 1: ['B-AUTH_SECRET', 0.4],
-      2: ['B-ACCOUNT_IDENTIFIER', 0.99],
+      2: ['B-ACCOUNT_IDENTIFIER', 0.59],
       3: ['B-AUTH_SECRET', 0.99], 4: ['B-AUTH_SECRET', 0.99],
     });
     expect(applyNerThresholdPolicy(spans, 'bardsai')).toEqual([
