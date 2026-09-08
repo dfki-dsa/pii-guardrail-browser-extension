@@ -6,6 +6,11 @@ The project follows public beta release notes for `0.x` versions.
 
 ## Unreleased
 
+- Added a first-run walkthrough that appears in the extension popup the first time it is opened. It answers four questions: why the download is large, where pasted text is processed, what the Identity Vault stores, and what to expect from Local AI. Installing the extension does not open a new tab or interrupt the user's workflow. The walkthrough remains available in the popup until the user completes or dismisses it, and it will not reappear afterward.
+- Explained the extension size by breaking down the package into its components, including the detection model, inference runtime, pattern engine, and interface. Clarified that the download is larger because all PII detection runs locally, so pasted content never leaves the user's device.
+- Added Local AI expectations to the walkthrough, including the initial model-loading delay on the first paste, approximately one second per scan afterward, around 1 GB of memory usage while the model remains loaded, and automatic unloading after 10 minutes of inactivity. Local AI can also be disabled directly from the walkthrough.
+- Improved Identity Vault transparency by clearly stating that original values are stored unencrypted on the user's device solely to enable reversing replacements, and that this data is never uploaded or synced. The Identity Vault can also be disabled directly from the walkthrough.
+
 ## [0.4.2] - Public Beta
 
 - Fixed replaced values being forgotten once a new chat got its own address. Starting a chat, pasting something that was replaced and sending it moves the page from the "new chat" screen to the conversation's own URL, and the replacements stayed filed under the screen you left — so after a reload the reply could no longer be turned back into your original values. They now move with the conversation, and switching between existing chats without a page reload loads the right conversation's replacements.

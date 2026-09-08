@@ -8,7 +8,7 @@
   import TestTab from "./components/TestTab.svelte";
   import Toggle from "./components/Toggle.svelte";
 
-  const { navigation, protection, categories, vault, test, settings } = createAppModels();
+  const { navigation, protection, categories, vault, test, settings, onboarding } = createAppModels();
   const { activeTab, setActiveTab } = navigation;
   const { enabled: protectionEnabled, version, modelLabel } = protection;
 </script>
@@ -59,6 +59,7 @@
           {protection}
           {categories}
           {vault}
+          {onboarding}
           openPrivacyPolicy={settings.openPrivacyPolicy}
           openTermsOfUse={settings.openTermsOfUse}
           openImpressum={settings.openImpressum}

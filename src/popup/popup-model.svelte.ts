@@ -34,6 +34,7 @@ import { deriveResourceSummary, type ResourceSummary } from '../shared/popup-res
 import { packagedTermsUrl, PUBLIC_PROJECT_LINKS } from '../shared/project-links';
 import { minResolvedThreshold, resolveThreshold } from '../shared/sensitivity-resolver';
 import { SYSTEM_CHECK_STORAGE_KEY } from '../shared/system-check-storage';
+import { dismissOnboarding, onboardingDismissed } from '../shared/onboarding-storage';
 import { clearEntityMaps, clearFeedback as clearFeedbackLog, getFeedbackLog, loadSettings, saveSettings } from '../shared/storage';
 
 export type TabId = 'protect' | 'detect' | 'test' | 'settings';
@@ -109,6 +110,14 @@ export type SettingsModel = {
   setClipboardInterceptEnabled: (enabled: boolean) => Promise<void>;
   setNerModelChoice: (value: string) => Promise<void>;
 };
+export type OnboardingPromptModel = {
+  /** Whether the popup should offer the first-run tour. */
+  visible: Writable<boolean>;
+  /** Open the onboarding page in a tab and close the popup. */
+  open: () => void;
+  /** Hide the prompt permanently */
+  dismiss: () => void;
+};
 export type AppModels = {
   navigation: NavigationModel;
   protection: ProtectionModel;
@@ -116,6 +125,7 @@ export type AppModels = {
   vault: VaultModel;
   test: TestModel;
   settings: SettingsModel;
+  onboarding: OnboardingPromptModel;
 };
 
 export const tabs: TabDefinition[] = [
@@ -201,6 +211,8 @@ export function createAppModels(): AppModels {
   const resultText = writable('');
   const runCount = writable(0);
   const feedbackCounts = writable<FeedbackCounts>({ confirmed: 0, ignored: 0, pending: 0 });
+
+  const showOnboardingPrompt = writable(false);
 
   const minConfidence = writable(0.5);
   const debug = writable(false);
@@ -321,6 +333,10 @@ export function createAppModels(): AppModels {
     applySettings(settings);
     await refreshStats();
     void probeWasm();
+
+    // Resolved independently of detection state: someone whose first paste
+    // fails should still be offered the explanation of why.
+    void onboardingDismissed().then((dismissed) => showOnboardingPrompt.set(!dismissed));
 
     const systemStatus = await fetchSystemCompatibility();
     systemCompatibility.set(systemStatus);
@@ -461,6 +477,18 @@ export function createAppModels(): AppModels {
         cpuFallback.set(false);
         await warmUpNer(config).catch(() => undefined);
         await refreshNerStatus(config);
+      },
+    },
+    onboarding: {
+      visible: showOnboardingPrompt,
+      open: () => {
+        void chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/onboarding.html') });
+        showOnboardingPrompt.set(false);
+        window.close();
+      },
+      dismiss: () => {
+        showOnboardingPrompt.set(false);
+        void dismissOnboarding();
       },
     },
   };
