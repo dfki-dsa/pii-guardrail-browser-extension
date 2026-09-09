@@ -38,7 +38,7 @@
 		<div>
 			<p class="step-title">After {RUNTIME_FACTS.defaultUnloadMinutes} minutes of inactivity: released</p>
 			<p class="step-detail">
-				To free up resources, the model is automatically unloaded after 10 minutes of inactivity. 
+				To free up resources, the model is automatically unloaded after {RUNTIME_FACTS.defaultUnloadMinutes} minutes of inactivity. 
 				The next paste will reload it. You can change the timeout or keep the model loaded for your entire session in the Settings.
 			</p>
 		</div>
@@ -62,10 +62,6 @@
 		onchange={(checked) => void setLocalAiEnabled(checked)}
 	/>
 </div>
-
-<p class="footnote">
-	
-</p>
 
 <style>
 	.timeline {
@@ -128,12 +124,6 @@
 		margin: 3px 0 0;
 		font-size: 13px;
 		line-height: 1.5;
-		color: var(--color-muted);
-	}
-	.footnote {
-		margin: 16px 0 0;
-		font-size: 13px;
-		line-height: 1.55;
 		color: var(--color-muted);
 	}
 </style>

@@ -7,10 +7,10 @@ import { dismissOnboarding } from '../shared/onboarding-storage';
  * onboarding answers, in the order a new user hits them: size first, then privacy, vault, speed.
  */
 export const STEPS = [
-  { label: 'Download', question: 'Lightweight Browser Extension' },
-  { label: 'Privacy', question: 'Everything Stays Private' },
-  { label: 'Vault', question: 'Private Memory Stored Securely on your Browser' },
-  { label: 'Speed', question: 'Fast, local AI Responses' },
+  { label: 'Download', question: 'Lightweight browser extension' },
+  { label: 'Privacy', question: 'Everything stays private' },
+  { label: 'Vault', question: 'Private memory stored securely on your browser' },
+  { label: 'Speed', question: 'Fast, local AI responses' },
 ] as const;
 
 export function createOnboardingModel() {

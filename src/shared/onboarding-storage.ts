@@ -20,5 +20,9 @@ export async function onboardingDismissed(): Promise<boolean> {
 
 /** Stop offering the prompt. Called on take, dismiss, and finish alike. */
 export async function dismissOnboarding(): Promise<void> {
-  await chrome.storage.local.set({ [ONBOARDING_STORAGE_KEY]: { dismissed: true } });
+  try {
+     await chrome.storage.local.set({ [ONBOARDING_STORAGE_KEY]: { dismissed: true } });
+   } catch {
+     // Ignore storage failures; onboarding state must never break the popup/onboarding UI.
+   }
 }

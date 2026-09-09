@@ -8,15 +8,15 @@
 		{
 			claim: 'Your data stays in the browser',
 			detail:
-				'Detection runs locally. The extension makes no network requests',
+				'Detection runs locally. The extension makes no network requests.',
 		},
 		{
 			claim: 'No analytics, no accounts',
-			detail: 'There is no sign-up and sign-in for using the extension',
+			detail: 'Uour usage is not tracked or reported. You do not require an account to use the extension.',
 		},
 		{
 			claim: 'Only runs on chat pages',
-			detail: 'It does not capture any detail on other websites/links.',
+			detail: 'It works only on supported chat assistants. Everywhere else, Privacy Guardrail stays inactive.',
 		},
 		{
 			claim: 'You approve every replacement',
