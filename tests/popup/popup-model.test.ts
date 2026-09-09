@@ -276,4 +276,14 @@ describe('createAppModels — first-run onboarding prompt', () => {
     expect(get(app.onboarding.visible)).toBe(false);
     expect(harness.store[ONBOARDING_KEY]).toEqual({ dismissed: true });
   });
+
+  test('a failed write leaves the card up rather than faking success', async () => {
+    const { app } = await setupOnboarding();
+    (chrome.storage.local.set as jest.Mock).mockRejectedValueOnce(new Error('quota'));
+
+    app.onboarding.dismiss();
+    await flushInit();
+    
+    expect(get(app.onboarding.visible)).toBe(true);
+  });
 });

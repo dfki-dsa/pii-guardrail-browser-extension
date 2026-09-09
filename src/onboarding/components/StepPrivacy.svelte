@@ -12,7 +12,7 @@
 		},
 		{
 			claim: 'No analytics, no accounts',
-			detail: 'Uour usage is not tracked or reported. You do not require an account to use the extension.',
+			detail: 'Your usage is not tracked or reported. You do not require an account to use the extension.',
 		},
 		{
 			claim: 'Only runs on chat pages',

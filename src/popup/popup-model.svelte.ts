@@ -487,8 +487,10 @@ export function createAppModels(): AppModels {
         window.close();
       },
       dismiss: () => {
-        showOnboardingPrompt.set(false);
-        void dismissOnboarding();
+        // Hide only once the choice is actually stored.
+        void dismissOnboarding().then((saved) => {
+          if (saved) showOnboardingPrompt.set(false);
+        });
       },
     },
   };
