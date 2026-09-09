@@ -228,3 +228,62 @@ describe('createAppModels — resource-safe popup', () => {
     expect(get(app.protection.resourceSummary)).toBeNull();
   });
 });
+
+describe('createAppModels — first-run onboarding prompt', () => {
+  const ONBOARDING_KEY = 'pg_onboarding';
+
+  async function setupOnboarding(stored?: unknown) {
+    const harness = await setupHarness({ systemStatus: okStatus() });
+    if (stored !== undefined) harness.store[ONBOARDING_KEY] = stored;
+    // `open()` closes the popup; the node test environment has no window.
+    (globalThis as any).window = { close: jest.fn() };
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+    return { harness, app };
+  }
+
+  test('offers the tour when nothing has been stored yet', async () => {
+    const { app } = await setupOnboarding();
+    expect(get(app.onboarding.visible)).toBe(true);
+  });
+
+  test('stays hidden once dismissed', async () => {
+    const { app } = await setupOnboarding({ dismissed: true });
+    expect(get(app.onboarding.visible)).toBe(false);
+  });
+
+  test('opening the tour does not count as dismissing it', async () => {
+    // Regression guard: opening then abandoning the tab must leave the offer
+    // standing. Only "Got it" (in the walkthrough) and "No thanks" record it.
+    const { harness, app } = await setupOnboarding();
+
+    app.onboarding.open();
+    await flushInit();
+
+    expect(chrome.tabs.create).toHaveBeenCalledWith({
+      url: 'chrome-extension://test/onboarding/onboarding.html',
+    });
+    expect(harness.store[ONBOARDING_KEY]).toBeUndefined();
+  });
+
+  test('"No thanks" records the dismissal', async () => {
+    const { harness, app } = await setupOnboarding();
+
+    app.onboarding.dismiss();
+    await flushInit();
+
+    expect(get(app.onboarding.visible)).toBe(false);
+    expect(harness.store[ONBOARDING_KEY]).toEqual({ dismissed: true });
+  });
+
+  test('a failed write leaves the card up rather than faking success', async () => {
+    const { app } = await setupOnboarding();
+    (chrome.storage.local.set as jest.Mock).mockRejectedValueOnce(new Error('quota'));
+
+    app.onboarding.dismiss();
+    await flushInit();
+    
+    expect(get(app.onboarding.visible)).toBe(true);
+  });
+});

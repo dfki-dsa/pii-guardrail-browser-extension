@@ -1,6 +1,12 @@
 <script lang="ts">
-	import type { CategoriesModel, ProtectionModel, VaultModel } from '../popup-model.svelte';
+	import type {
+		CategoriesModel,
+		OnboardingPromptModel,
+		ProtectionModel,
+		VaultModel
+	} from '../popup-model.svelte';
 	import CategoryChipsCard from './CategoryChipsCard.svelte';
+	import FirstRunCard from './FirstRunCard.svelte';
 	import IdentityVaultCard from './IdentityVaultCard.svelte';
 	import LegalCard from './LegalCard.svelte';
 	import MaintenanceCard from './MaintenanceCard.svelte';
@@ -10,6 +16,7 @@
 		protection,
 		categories,
 		vault,
+		onboarding,
 		openPrivacyPolicy,
 		openTermsOfUse,
 		openImpressum
@@ -17,6 +24,7 @@
 		protection: ProtectionModel;
 		categories: CategoriesModel;
 		vault: VaultModel;
+		onboarding: OnboardingPromptModel;
 		openPrivacyPolicy: () => void;
 		openTermsOfUse: () => void;
 		openImpressum: () => void;
@@ -24,6 +32,11 @@
 </script>
 
 <div class="protect-stack">
+	<FirstRunCard
+		visible={onboarding.visible}
+		openOnboarding={onboarding.open}
+		dismiss={onboarding.dismiss}
+	/>
 	<ProtectionStatusCard
 		enabled={protection.enabled}
 		wasmStatus={protection.wasmStatus}

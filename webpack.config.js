@@ -46,6 +46,7 @@ module.exports = (_env = {}) => {
       'system-check/system-check-offscreen': './src/system-check/system-check-offscreen.ts',
       'popup/popup': './src/popup/popup.ts',
       'options/options': './src/options/options.ts',
+      'onboarding/onboarding': './src/onboarding/onboarding.ts',
     },
 
     output: {
@@ -163,6 +164,13 @@ module.exports = (_env = {}) => {
         template: 'src/options/options.html',
         filename: 'options/options.html',
         chunks: ['options/options'],
+      }),
+
+      // First-run onboarding HTML
+      new HtmlWebpackPlugin({
+        template: 'src/onboarding/onboarding.html',
+        filename: 'onboarding/onboarding.html',
+        chunks: ['onboarding/onboarding'],
       }),
 
       // Offscreen HTML
