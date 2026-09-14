@@ -482,8 +482,9 @@ export function createAppModels(): AppModels {
     onboarding: {
       visible: showOnboardingPrompt,
       open: () => {
-        void chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/onboarding.html') });
-        showOnboardingPrompt.set(false);
+        void chrome.tabs.create({ 
+          url: chrome.runtime.getURL('onboarding/onboarding.html') 
+        });
         window.close();
       },
       dismiss: () => {

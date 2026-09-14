@@ -36,8 +36,9 @@ export function createOnboardingModel() {
       await applySettings({ nerProvider: enabled ? 'transformers' : 'off' });
     },
     setVaultEnabled: (enabled: boolean) => applySettings({ identityVaultEnabled: enabled }),
-    finish: async () => {
-      await dismissOnboarding();
+     finish: async () => {
+      const saved = await dismissOnboarding();
+      if (!saved) return;
       // window.close() is a no-op on a tab the script did not open.
       const tab = await chrome.tabs.getCurrent();
       if (tab?.id !== undefined) await chrome.tabs.remove(tab.id);
