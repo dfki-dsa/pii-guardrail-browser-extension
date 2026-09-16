@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import type { Settings } from '../shared/message-types';
+import type { Settings, SettingsUpdatedMessage } from '../shared/message-types';
 import { loadSettings, saveSettings } from '../shared/storage';
 import { dismissOnboarding } from '../shared/onboarding-storage';
 
@@ -9,8 +9,8 @@ import { dismissOnboarding } from '../shared/onboarding-storage';
 export const STEPS = [
   { label: 'Download', question: 'Lightweight browser extension' },
   { label: 'Privacy', question: 'Everything stays private' },
-  { label: 'Vault', question: 'Private memory stored securely on your browser' },
-  { label: 'Speed', question: 'Fast, local AI responses' },
+  { label: 'Vault', question: 'Private memory stored locally in your browser' },
+  { label: 'Speed', question: 'Fast, local AI detection' },
 ] as const;
 
 export function createOnboardingModel() {
@@ -19,9 +19,24 @@ export function createOnboardingModel() {
   const localAiEnabled = derived(settings, ($settings) => $settings?.nerProvider !== 'off');
   const vaultEnabled = derived(settings, ($settings) => $settings?.identityVaultEnabled ?? true);
 
+  /**
+   * `saveSettings` only writes storage. Content scripts re-read settings from
+   * the SETTINGS_UPDATED broadcast alone, so without this an open ChatGPT tab
+   * keeps the old vault and Local AI behaviour until it is reloaded.
+   */
   async function applySettings(patch: Partial<Settings>): Promise<void> {
     await saveSettings(patch);
-    settings.set(await loadSettings());
+    const updated = await loadSettings();
+    settings.set(updated);
+    await broadcast(updated);
+  }
+
+  async function broadcast(updated: Settings): Promise<void> {
+    const message: SettingsUpdatedMessage = { type: 'SETTINGS_UPDATED', payload: updated };
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(
+      tabs.map((tab) => (tab.id ? chrome.tabs.sendMessage(tab.id, message).catch(() => undefined) : undefined)),
+    );
   }
 
   void loadSettings().then((loaded) => settings.set(loaded));
@@ -31,9 +46,18 @@ export function createOnboardingModel() {
     localAiEnabled,
     vaultEnabled,
     setLocalAiEnabled: async (enabled: boolean) => {
-      // Mirrors the options page: 'off' unloads the runtime, 'transformers'
-      // allows it to load again. The service worker owns the actual unload.
-      await applySettings({ nerProvider: enabled ? 'transformers' : 'off' });
+      // Routed through the background rather than written directly, so the
+      // resource guard's bookkeeping runs: a low-memory override is recorded
+      // when the system is critical, the offscreen runtime is closed on
+      // disable, and localAiState stays consistent with what the popup and
+      // options page report.
+      await chrome.runtime.sendMessage({
+        type: 'SET_LOCAL_AI_DETECTION',
+        payload: { enabled },
+      });
+      const updated = await loadSettings();
+      settings.set(updated);
+      await broadcast(updated);
     },
     setVaultEnabled: (enabled: boolean) => applySettings({ identityVaultEnabled: enabled }),
      finish: async () => {

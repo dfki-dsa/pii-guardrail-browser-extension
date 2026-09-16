@@ -1,9 +1,9 @@
 /**
  * First-run state for the onboarding flow.
  *
- * Own key rather than a field on `Settings`: `saveSettings` broadcasts
- * SETTINGS_UPDATED to every content script, and "restore defaults" must not
- * resurrect the welcome card for a long-time user. Local to the device.
+ * Own key rather than a field on `Settings`, so it is untouched by settings
+ * migrations and by "restore defaults" which must not resurrect the welcome
+ * card for someone who previously had the extension. Local to the device.
  */
 
 export const ONBOARDING_STORAGE_KEY = 'pg_onboarding';

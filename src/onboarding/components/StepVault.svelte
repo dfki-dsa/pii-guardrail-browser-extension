@@ -59,7 +59,7 @@
 		<p class="choice-detail">
 			{$vaultEnabled
 				? 'Replacements stay the same across chats and sessions.'
-				: 'Each conversation is handled on its own and nothing is kept.'}
+				: 'Each conversation keeps its own local mapping instead of storing it in the vault.'}
 		</p>
 	</div>
 	<Toggle

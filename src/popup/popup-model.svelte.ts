@@ -329,14 +329,11 @@ export function createAppModels(): AppModels {
   }
 
   async function init(): Promise<void> {
+    void onboardingDismissed().then((dismissed) => showOnboardingPrompt.set(!dismissed));
     const settings = await loadSettings();
     applySettings(settings);
     await refreshStats();
     void probeWasm();
-
-    // Resolved independently of detection state: someone whose first paste
-    // fails should still be offered the explanation of why.
-    void onboardingDismissed().then((dismissed) => showOnboardingPrompt.set(!dismissed));
 
     const systemStatus = await fetchSystemCompatibility();
     systemCompatibility.set(systemStatus);

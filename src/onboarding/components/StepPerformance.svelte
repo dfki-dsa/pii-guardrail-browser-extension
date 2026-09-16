@@ -16,10 +16,11 @@
 	<li>
 		<span class="marker">1</span>
 		<div>
-			<p class="step-title">First paste: loading</p>
+			<p class="step-title">First use: loading</p>
 			<p class="step-detail">
-				The model loads into memory. That takes a few seconds, and it happens once rather than on
-				every paste.
+				The model loads into memory, which takes a few seconds. It usually starts as soon as you
+				open a supported chat page, so by your first paste it is often ready. Either way it
+				happens once, not on every paste.
 			</p>
 		</div>
 	</li>
