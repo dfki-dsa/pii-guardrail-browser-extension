@@ -1,6 +1,6 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { ExtensionHarness } from './harness';
 
 const buildDir = path.resolve('dist');
@@ -40,6 +40,23 @@ async function openPopup(harness: ExtensionHarness) {
   return harness.page;
 }
 
+async function expectHaloAtAnchor(popup: Page, anchor: string): Promise<void> {
+  const target = popup.locator(`[data-onboarding-anchor="${anchor}"]`);
+  const halo = popup.locator('.target-halo');
+  await expect(target).toBeVisible();
+  await expect(halo).toBeVisible();
+  await expect.poll(async () => {
+    const [targetBox, haloBox] = await Promise.all([target.boundingBox(), halo.boundingBox()]);
+    if (!targetBox || !haloBox) return Number.POSITIVE_INFINITY;
+    return Math.max(
+      Math.abs(haloBox.x - targetBox.x),
+      Math.abs(haloBox.y - targetBox.y),
+      Math.abs(haloBox.width - targetBox.width),
+      Math.abs(haloBox.height - targetBox.height),
+    );
+  }).toBeLessThan(3);
+}
+
 test('fresh-install invitation is non-modal and Help remains available after Not now', async () => {
   const harness = await launchHarness();
   try {
@@ -77,6 +94,50 @@ test('closing a fresh popup before acknowledgement preserves the invitation', as
 
     await openPopup(harness);
     await expect(popup.getByText('Get to know Privacy Guardrail')).toBeVisible();
+  } finally {
+    await harness.close();
+  }
+});
+
+test('Help starts on Protect and resolves every coachmark anchor from each other tab', async () => {
+  const harness = await launchHarness();
+  try {
+    await harness.configure({ nerProvider: 'off', enabled: true });
+    await seedHint(harness, 'existing');
+    const popup = await openPopup(harness);
+    const dialog = popup.getByRole('dialog');
+    const anchors = [
+      'onboarding-help',
+      'paste-review',
+      'replacement-mode',
+      'local-ai-status',
+      'detection-categories',
+      'identity-vault',
+      'tab-detect',
+      'tab-test',
+      'tab-settings',
+      'assistive-disclaimer',
+    ];
+
+    for (const sourceTab of ['Detect', 'Test', 'Settings'] as const) {
+      const source = popup.getByRole('button', { name: sourceTab, exact: true });
+      await source.click();
+      await expect(source).toHaveAttribute('aria-current', 'page');
+
+      await popup.getByRole('button', { name: 'Help: start Protect tour' }).click();
+      await expect(dialog).toContainText('Step 1 of 10');
+      await expect(popup.getByRole('button', { name: 'Protect', exact: true })).toHaveAttribute('aria-current', 'page');
+      await expect(source).not.toHaveAttribute('aria-current', 'page');
+
+      for (const [index, anchor] of anchors.entries()) {
+        await expect(dialog).toContainText(`Step ${index + 1} of 10`);
+        await expectHaloAtAnchor(popup, anchor);
+        if (index < anchors.length - 1) await popup.getByRole('button', { name: 'Next' }).click();
+      }
+
+      await popup.getByRole('button', { name: 'End tour' }).click();
+      await expect(dialog).toHaveCount(0);
+    }
   } finally {
     await harness.close();
   }

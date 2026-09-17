@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { createAppModels, tabs } from "./popup-model.svelte";
   import OnboardingCoachmark from "./components/OnboardingCoachmark.svelte";
   import OnboardingHelp from "./components/OnboardingHelp.svelte";
@@ -19,7 +20,11 @@
   let shellBody = $state<HTMLElement>();
   let helpButton = $state<HTMLButtonElement>();
 
-  function startTour(): void {
+  async function startTour(): Promise<void> {
+    // Every topic is measured against Protect, including launches from the
+    // footer Help control while another tab is selected.
+    setActiveTab('protect');
+    await tick();
     onboarding.acknowledgeHint();
     onboarding.tour.start();
   }
