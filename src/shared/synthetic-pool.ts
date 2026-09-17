@@ -28,9 +28,37 @@
 
 import type { EntityType } from './message-types';
 
-/** Names chosen for being recognisable as Western-style but not associated
- *  with prominent public figures. Mix of single and multi-cultural roots. */
-const PERSON_POOL: readonly string[] = [
+/** Single-token (first-name) person pool. Returned by `generateSyntheticValue('PERSON', idx, { tokenCount: 1 })`. */
+export const PERSON_POOL_SINGLE: readonly string[] = [
+  'Alex',
+  'Sam',
+  'Jordan',
+  'Robin',
+  'Avery',
+  'Taylor',
+  'Morgan',
+  'Casey',
+  'Riley',
+  'Quinn',
+  'Sage',
+  'Reese',
+  'Devon',
+  'Ellis',
+  'Rowan',
+  'Phoenix',
+  'Hayden',
+  'Skyler',
+  'Emery',
+  'Wren',
+  'Cameron',
+  'Drew',
+  'Logan',
+  'Tatum',
+  'Indigo',
+];
+
+/** Multi-token (first + last) person pool. Returned by `generateSyntheticValue('PERSON', idx, { tokenCount: 2 })`. */
+export const PERSON_POOL_MULTI: readonly string[] = [
   'Jordan Park',
   'Casey Morrow',
   'Avery Quinn',
@@ -214,35 +242,33 @@ function appendCycleSuffix(base: string, cycle: number): string {
   return `${base} ${cycle}`;
 }
 
-function buildEmail(personName: string, index: number): string {
+function buildEmail(personName: string, index: number, tokenCount?: 1 | 2): string {
   const localBase = personName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '.')
     .replace(/^\.+|\.+$/g, '');
   const domain = EMAIL_DOMAIN_POOL[index % EMAIL_DOMAIN_POOL.length];
+  void tokenCount;
   return `${localBase}@${domain}`;
 }
 
+function personPoolFor(tokenCount?: 1 | 2): readonly string[] {
+  return tokenCount === 1 ? PERSON_POOL_SINGLE : PERSON_POOL_MULTI;
+}
+
 /**
- * Generate a synthetic value for a given entity type.
+ * Pick a synthetic replacement for a detected PII span.
  *
- * @param entityType — the PII entity type to generate for.
- * @param index — monotonic counter per type (vault assigns this), used to
- *   pick an unused value from the pool deterministically.
- * @param context — optional contextual hints. `personSeed` lets EMAIL
- *   generation reuse a person's synthetic name as the email local part so
- *   `Jordan Park <jordan.park@example.com>` stays internally consistent.
- * @returns the synthetic value, or `null` if the type opts out (the caller
- *   should fall back to the typed placeholder).
+ * @param context.tokenCount — `1` picks PERSON_POOL_SINGLE; `2` picks PERSON_POOL_MULTI. Omit for back-compat (defaults to multi).
  */
 export function generateSyntheticValue(
   entityType: EntityType,
   index: number,
-  context?: { personSeed?: string },
+  context?: { personSeed?: string; tokenCount?: 1 | 2 },
 ): string | null {
   switch (entityType) {
     case 'PERSON':
-      return pickFromPool(PERSON_POOL, index);
+      return pickFromPool(personPoolFor(context?.tokenCount), index);
     case 'LOCATION':
       return pickFromPool(LOCATION_POOL, index);
     case 'ORGANIZATION':
@@ -256,8 +282,8 @@ export function generateSyntheticValue(
     case 'EMAIL': {
       const seed = context?.personSeed
         ? context.personSeed
-        : pickFromPool(PERSON_POOL, index);
-      return buildEmail(seed, index);
+        : pickFromPool(personPoolFor(context?.tokenCount), index);
+      return buildEmail(seed, index, context?.tokenCount);
     }
     case 'PHONE':
       return pickFromPool(PHONE_POOL, index);
@@ -312,13 +338,14 @@ export function supportsSynthetic(entityType: EntityType): boolean {
  */
 export function poolSize(entityType: EntityType): number {
   switch (entityType) {
-    case 'PERSON': return PERSON_POOL.length;
+    case 'PERSON': return PERSON_POOL_SINGLE.length + PERSON_POOL_MULTI.length;
     case 'LOCATION': return LOCATION_POOL.length;
     case 'ORGANIZATION': return ORGANIZATION_POOL.length;
     case 'ADDRESS': return ADDRESS_POOL.length;
     case 'USERNAME': return USERNAME_POOL.length;
     case 'MISC': return MISC_POOL.length;
-    case 'EMAIL': return PERSON_POOL.length * EMAIL_DOMAIN_POOL.length;
+    case 'EMAIL':
+      return (PERSON_POOL_SINGLE.length + PERSON_POOL_MULTI.length) * EMAIL_DOMAIN_POOL.length;
     case 'PHONE': return PHONE_POOL.length;
     case 'CREDIT_CARD': return CREDIT_CARD_POOL.length;
     case 'SSN': return SSN_POOL.length;

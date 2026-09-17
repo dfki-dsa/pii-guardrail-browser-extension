@@ -44,11 +44,34 @@ describe('synthetic-pool', () => {
   });
 
   describe('generateSyntheticValue', () => {
-    test('PERSON returns realistic name', () => {
+    test('PERSON defaults to multi-token (back-compat)', () => {
       const v = generateSyntheticValue('PERSON', 0);
       expect(v).toBeTruthy();
       expect(typeof v).toBe('string');
       expect(v).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+/);
+    });
+
+    test('PERSON with tokenCount=1 returns single-token name', () => {
+      const v = generateSyntheticValue('PERSON', 0, { tokenCount: 1 });
+      expect(v).toBeTruthy();
+      expect(v!.split(/\s+/).length).toBe(1);
+      expect(v).toMatch(/^[A-Z][a-z]+$/);
+    });
+
+    test('PERSON with tokenCount=2 returns two-token name', () => {
+      const v = generateSyntheticValue('PERSON', 0, { tokenCount: 2 });
+      expect(v!.split(/\s+/).length).toBe(2);
+      expect(v).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+/);
+    });
+
+    test('EMAIL with tokenCount=1 produces single-token local part', () => {
+      const v = generateSyntheticValue('EMAIL', 0, { tokenCount: 1 })!;
+      expect(v.split('@')[0]).not.toContain('.');
+    });
+
+    test('EMAIL with tokenCount=2 produces dotted local part', () => {
+      const v = generateSyntheticValue('EMAIL', 0, { tokenCount: 2 })!;
+      expect(v.split('@')[0]).toContain('.');
     });
 
     test('LOCATION returns place name', () => {
