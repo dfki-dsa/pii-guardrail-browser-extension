@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createAppModels, tabs } from "./popup-model.svelte";
+  import OnboardingCoachmark from "./components/OnboardingCoachmark.svelte";
+  import OnboardingHelp from "./components/OnboardingHelp.svelte";
   import DetectTab from "./components/DetectTab.svelte";
   import DFKILogo from "./components/DFKILogo.svelte";
   import PGLogo from "./components/PGLogo.svelte";
@@ -8,14 +10,29 @@
   import TestTab from "./components/TestTab.svelte";
   import Toggle from "./components/Toggle.svelte";
 
-  const { navigation, protection, categories, vault, test, settings } = createAppModels();
+  const { navigation, protection, categories, vault, test, settings, onboarding } = createAppModels();
   const { activeTab, setActiveTab } = navigation;
   const { enabled: protectionEnabled, version, modelLabel } = protection;
+  const { hintStatus, invitationVisible, tour } = onboarding;
+  const { active: tourActive } = tour;
+  let shell = $state<HTMLElement>();
+  let shellBody = $state<HTMLElement>();
+  let helpButton = $state<HTMLButtonElement>();
+
+  function startTour(): void {
+    onboarding.acknowledgeHint();
+    onboarding.tour.start();
+  }
+
+  function endTour(): void {
+    onboarding.tour.end();
+    requestAnimationFrame(() => helpButton?.focus());
+  }
 </script>
 
 <div class="page-frame">
-  <main class="popup-shell" aria-label="Privacy Guardrail popup">
-    <header class="shell-header">
+  <main bind:this={shell} class="popup-shell" aria-label="Privacy Guardrail popup">
+    <header class="shell-header" inert={$tourActive ? true : undefined}>
       <div class="brand-row">
         <div class="logo-box"><PGLogo size={24} /></div>
         <div class="brand-copy">
@@ -39,12 +56,13 @@
         </a>
       </div>
 
-      <nav class="tab-nav" aria-label="Popup sections">
+      <nav class="tab-nav" aria-label="Popup sections" data-onboarding-anchor="tab-navigation">
         {#each tabs as tab (tab.id)}
           <button
             type="button"
             class:active={$activeTab === tab.id}
             aria-current={$activeTab === tab.id ? "page" : undefined}
+            data-onboarding-anchor={tab.id === "detect" ? "tab-detect" : tab.id === "test" ? "tab-test" : tab.id === "settings" ? "tab-settings" : undefined}
             onclick={() => setActiveTab(tab.id)}
           >
             {tab.label}
@@ -53,7 +71,7 @@
       </nav>
     </header>
 
-    <section class="shell-body" aria-live="polite">
+    <section bind:this={shellBody} class="shell-body" aria-live="polite" inert={$tourActive ? true : undefined}>
       {#if $activeTab === "protect"}
         <ProtectTab
           {protection}
@@ -103,9 +121,30 @@
       {/if}
     </section>
 
-    <footer class="shell-footer">
+    <footer class="shell-footer" inert={$tourActive ? true : undefined}>
+      <OnboardingHelp
+        emphasized={$hintStatus === "new"}
+        showInvitation={$invitationVisible}
+        onStart={startTour}
+        onDismissInvitation={onboarding.acknowledgeHint}
+        bindButton={(button) => helpButton = button}
+      />
       <button type="button" onclick={() => settings.openOptions()}>More settings…</button>
     </footer>
+
+    {#if $tourActive}
+      <OnboardingCoachmark
+        step={tour.step}
+        stepIndex={tour.stepIndex}
+        canGoBack={tour.canGoBack}
+        canGoNext={tour.canGoNext}
+        onBack={tour.back}
+        onNext={tour.next}
+        onEnd={endTour}
+        {shell}
+        body={shellBody}
+      />
+    {/if}
   </main>
 </div>
 
@@ -130,6 +169,7 @@
     box-sizing: border-box;
   }
   .popup-shell {
+    position: relative;
     width: var(--popup-width);
     height: var(--popup-height);
     display: flex;
@@ -241,13 +281,16 @@
     background: var(--color-surface);
   }
   .shell-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     flex-shrink: 0;
     padding: 8px 12px;
     border-top: 1px solid rgb(14 23 38 / 8%);
     background: var(--color-header);
   }
-  .shell-footer button {
-    width: 100%;
+  .shell-footer > button {
+    width: auto;
     padding: 6px;
     border: 0;
     background: transparent;

@@ -215,6 +215,16 @@ export interface OpenOptionsPageRequest {
   payload: { url: string };
 }
 
+/** Request the worker to remove first-use Help emphasis, if still pending. */
+export interface AcknowledgeOnboardingHintRequest {
+  type: 'ACKNOWLEDGE_ONBOARDING_HINT';
+}
+
+export interface AcknowledgeOnboardingHintResponse {
+  type: 'ONBOARDING_HINT_ACKNOWLEDGED';
+  payload: { acknowledged: boolean };
+}
+
 export interface SystemCompatibilityStatus {
   schemaVersion: number;
   policyVersion: number;
@@ -410,6 +420,8 @@ export type Message =
   | LogFeedbackRequest
   | SettingsUpdatedMessage
   | OpenOptionsPageRequest
+  | AcknowledgeOnboardingHintRequest
+  | AcknowledgeOnboardingHintResponse
   | GetSystemCompatibilityStatusRequest
   | SystemCompatibilityStatusResponse
   | SetLocalAiDetectionRequest

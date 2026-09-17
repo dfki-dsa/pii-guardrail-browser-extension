@@ -12,6 +12,9 @@ Depending on enabled features and usage, local storage can include:
 - replacement mode choices
 - allowlist and blocklist entries
 - local feedback or correction logs
+- a small onboarding-help preference indicating whether the first-use Help invitation was acknowledged
+
+The onboarding-help preference is only local UI state. It does not record tour steps, completion, timestamps, identifiers, sensitive text, or analytics, and it does not affect whether Help remains available. Tour progress is kept only while the popup is open and is not saved.
 
 This data can include original sensitive text because placeholder restoration needs a local mapping from placeholders or synthetic values back to the original value.
 

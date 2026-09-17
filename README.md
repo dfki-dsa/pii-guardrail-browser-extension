@@ -67,6 +67,12 @@ These requirements are heuristic because Local AI runs a transformer NER model e
 
 No pasted text is sent to a remote inference service. There is no telemetry or analytics. See [`PRIVACY.md`](PRIVACY.md) for the full privacy posture.
 
+### Optional Protect tour
+
+Open the extension popup and keep the **Protect** tab selected to use its **Help** control beside **More settings**. On a fresh installation, a small invitation can point to Help; choose **Start tour** to begin or **Not now** to remove the extra invitation. The tour is optional and does not open by itself.
+
+The replayable ten-step tour gives short introductions to local protection, paste review, placeholders and restoration, Local AI, categories and rules, the local vault, and the **Detect**, **Test**, and **Settings** labels. The three tab overviews do not switch tabs or change settings. Use **Back**, **Next**, or **End tour** at any time; close or end the tour to stop it, then launch it again later from Help. Tour progress is not saved or resumed.
+
 ## Known limitations
 
 - Detection can miss sensitive content and can flag harmless text.
