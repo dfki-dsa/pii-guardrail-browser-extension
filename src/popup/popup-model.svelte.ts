@@ -38,7 +38,7 @@ import { packagedTermsUrl, PUBLIC_PROJECT_LINKS } from '../shared/project-links'
 import { minResolvedThreshold, resolveThreshold } from '../shared/sensitivity-resolver';
 import { SYSTEM_CHECK_STORAGE_KEY } from '../shared/system-check-storage';
 import { clearEntityMaps, clearFeedback as clearFeedbackLog, getFeedbackLog, loadSettings, saveSettings } from '../shared/storage';
-import { loadOnboardingHint, ONBOARDING_HINT_STORAGE_KEY, type OnboardingHintStatus } from '../shared/onboarding-storage';
+import { isOnboardingHint, loadOnboardingHint, ONBOARDING_HINT_STORAGE_KEY, type OnboardingHintStatus } from '../shared/onboarding-storage';
 import { createOnboardingModel, type OnboardingModel } from './onboarding-model';
 
 export type TabId = 'protect' | 'detect' | 'test' | 'settings';
@@ -193,6 +193,7 @@ export function createAppModels(): AppModels {
   const invitationVisible = writable(false);
   const tour = createOnboardingModel();
   let localHintAcknowledged = false;
+  let acknowledgementRequested = false;
   const enabled = writable(true);
   const wasmStatus = writable<StatusPill>(status('Loading...', 'muted'));
   const nerStatus = writable<StatusPill>(status('Loading...', 'muted'));
@@ -372,6 +373,8 @@ export function createAppModels(): AppModels {
     localHintAcknowledged = true;
     hintStatus.set('acknowledged');
     invitationVisible.set(false);
+    if (acknowledgementRequested) return;
+    acknowledgementRequested = true;
     void chrome.runtime.sendMessage({ type: 'ACKNOWLEDGE_ONBOARDING_HINT' }).catch(() => undefined);
   }
 
@@ -546,8 +549,10 @@ export function createAppModels(): AppModels {
       }
       if (changes[ONBOARDING_HINT_STORAGE_KEY] && !localHintAcknowledged) {
         const hint = changes[ONBOARDING_HINT_STORAGE_KEY].newValue;
-        hintStatus.set((hint && typeof hint === 'object' && (hint as { status?: unknown }).status === 'new') ? 'new' : null);
-        invitationVisible.set((hint as { status?: unknown } | undefined)?.status === 'new');
+        // Reuse the same versioned validator as initial reads. A malformed or
+        // future record must never become an inferred fresh-install state.
+        hintStatus.set(isOnboardingHint(hint) ? hint.status : null);
+        invitationVisible.set(isOnboardingHint(hint) && hint.status === 'new');
       }
       if (changes['pg_identity_vault']) void refreshStats();
       if (changes[SYSTEM_CHECK_STORAGE_KEY]) {

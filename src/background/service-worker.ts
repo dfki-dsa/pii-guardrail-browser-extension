@@ -444,7 +444,19 @@ function isBackgroundRequest(message: Message): boolean {
 }
 
 function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
-  return sender.url === chrome.runtime.getURL("popup/popup.html");
+  if (!sender.url) return false;
+  try {
+    const expected = new URL(chrome.runtime.getURL("popup/popup.html"));
+    const actual = new URL(sender.url);
+    // Query/hash state is harmless, but another extension page or origin must
+    // never be able to acknowledge the first-use preference.
+    return actual.protocol === expected.protocol
+      && actual.hostname === expected.hostname
+      && actual.port === expected.port
+      && actual.pathname === expected.pathname;
+  } catch {
+    return false;
+  }
 }
 
 async function handleMessage(

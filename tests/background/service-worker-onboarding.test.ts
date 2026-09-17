@@ -95,9 +95,23 @@ describe('background onboarding lifecycle', () => {
 
     await expect(send(
       { type: 'ACKNOWLEDGE_ONBOARDING_HINT' },
-      { url: 'chrome-extension://test/popup/popup.html' },
+      { url: 'chrome-extension://test/popup/popup.html?source=toolbar#help' },
     )).resolves.toEqual({ type: 'ONBOARDING_HINT_ACKNOWLEDGED', payload: { acknowledged: true } });
     expect(store[HINT_KEY]).toEqual({ schemaVersion: 1, status: 'acknowledged' });
+  });
+
+  test('rejects another extension origin and path even when URL shape is valid', async () => {
+    store[HINT_KEY] = { schemaVersion: 1, status: 'new' };
+
+    await expect(send(
+      { type: 'ACKNOWLEDGE_ONBOARDING_HINT' },
+      { url: 'chrome-extension://other/popup/popup.html?source=toolbar' },
+    )).resolves.toEqual(expect.objectContaining({ error: expect.any(String) }));
+    await expect(send(
+      { type: 'ACKNOWLEDGE_ONBOARDING_HINT' },
+      { url: 'chrome-extension://test/options/options.html#popup/popup.html' },
+    )).resolves.toEqual(expect.objectContaining({ error: expect.any(String) }));
+    expect(store[HINT_KEY]).toEqual({ schemaVersion: 1, status: 'new' });
   });
 
   test('acknowledgement is idempotent and never creates a missing preference', async () => {

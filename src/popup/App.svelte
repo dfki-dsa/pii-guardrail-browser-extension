@@ -14,7 +14,7 @@
   const { activeTab, setActiveTab } = navigation;
   const { enabled: protectionEnabled, version, modelLabel } = protection;
   const { hintStatus, invitationVisible, tour } = onboarding;
-  const { active: tourActive } = tour;
+  const { active: tourActive, step: tourStep } = tour;
   let shell = $state<HTMLElement>();
   let shellBody = $state<HTMLElement>();
   let helpButton = $state<HTMLButtonElement>();
@@ -80,6 +80,7 @@
           openPrivacyPolicy={settings.openPrivacyPolicy}
           openTermsOfUse={settings.openTermsOfUse}
           openImpressum={settings.openImpressum}
+          activeOnboardingAnchor={$tourStep?.anchor}
         />
       {:else if $activeTab === "detect"}
         <DetectTab {categories} />

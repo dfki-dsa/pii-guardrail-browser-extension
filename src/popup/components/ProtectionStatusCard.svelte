@@ -5,18 +5,21 @@
 	import type { ResourceSummary } from '../../shared/popup-resource-summary';
 	import { AI_TRANSPARENCY_NOTICE } from '../../shared/project-links';
 
-	let { enabled, wasmStatus, nerStatus, cpuFallback, resourceSummary, composerMatch }: {
+	let { enabled, wasmStatus, nerStatus, cpuFallback, resourceSummary, composerMatch, showPasteReviewAnchor = false }: {
 		enabled: Writable<boolean>;
 		wasmStatus: Writable<StatusPill>;
 		nerStatus: Writable<StatusPill>;
 		cpuFallback: Writable<boolean>;
 		resourceSummary: Readable<ResourceSummary | null>;
 		composerMatch: Writable<ComposerMatchState | null>;
+		showPasteReviewAnchor?: boolean;
 	} = $props();
 </script>
 
 <div class="pill-row" aria-label="System status" data-onboarding-anchor="protection-status">
-	<span class="conceptual-anchor" data-onboarding-anchor="paste-review" aria-hidden="true">Paste review</span>
+	{#if showPasteReviewAnchor}
+		<span class="conceptual-anchor" data-onboarding-anchor="paste-review" aria-hidden="true">Paste review</span>
+	{/if}
 	<span class="pill">
 		<span class={['dot', !$enabled && 'off']}></span>
 		<span class="key">protection</span>

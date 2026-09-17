@@ -17,6 +17,8 @@ async function setupHarness(opts: {
   settings?: Partial<Settings>;
   systemStatus: SystemCompatibilityStatus | null;
   handle?: SendMessageHandler;
+  onboardingHint?: unknown;
+  loadOnboardingHint?: () => Promise<unknown>;
   /** What the active supported page answers about its message box, if any. */
   pageProtection?: { composerMatch: 'adapter' | 'generic' | 'none' | null } | 'no-page';
 }): Promise<Harness> {
@@ -25,6 +27,7 @@ async function setupHarness(opts: {
     [SETTINGS_KEY]: { ...DEFAULT_SETTINGS, ...opts.settings },
   };
   if (opts.systemStatus) store[SYSTEM_CHECK_KEY] = opts.systemStatus;
+  if (opts.onboardingHint !== undefined) store.pg_onboarding_hint = opts.onboardingHint;
 
   const storageChangedListeners: Harness['storageChangedListeners'] = [];
 
@@ -50,7 +53,12 @@ async function setupHarness(opts: {
   (globalThis as any).chrome = {
     storage: {
       local: {
-        get: jest.fn(async (key: string) => ({ [key]: store[key] })),
+        get: jest.fn(async (key: string) => {
+          if (key === 'pg_onboarding_hint' && opts.loadOnboardingHint) {
+            return { [key]: await opts.loadOnboardingHint() };
+          }
+          return { [key]: store[key] };
+        }),
         set: jest.fn(async (value: Record<string, unknown>) => { Object.assign(store, value); }),
         remove: jest.fn(async (key: string) => { delete store[key]; }),
       },
@@ -108,6 +116,78 @@ function okStatus(overrides: Partial<SystemCompatibilityStatus> = {}): SystemCom
     ...overrides,
   };
 }
+
+describe('createAppModels — onboarding preference', () => {
+  test('uses ordinary Help when the preference read fails', async () => {
+    await setupHarness({
+      systemStatus: okStatus(),
+      loadOnboardingHint: async () => { throw new Error('storage unavailable'); },
+    });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    expect(get(app.onboarding.hintStatus)).toBeNull();
+    expect(get(app.onboarding.invitationVisible)).toBe(false);
+  });
+
+  test('does not let a late preference read overwrite local acknowledgement', async () => {
+    let resolveHint: ((value: unknown) => void) | undefined;
+    await setupHarness({
+      systemStatus: okStatus(),
+      loadOnboardingHint: () => new Promise((resolve) => { resolveHint = resolve; }),
+    });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    for (let i = 0; i < 10 && !resolveHint; i += 1) await Promise.resolve();
+
+    app.onboarding.acknowledgeHint();
+    resolveHint?.({ schemaVersion: 1, status: 'new' });
+    await flushInit();
+
+    expect(get(app.onboarding.hintStatus)).toBe('acknowledged');
+    expect(get(app.onboarding.invitationVisible)).toBe(false);
+  });
+
+  test('validates storage changes and preserves valid acknowledged/existing statuses', async () => {
+    const h = await setupHarness({ systemStatus: okStatus() });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+    const change = (value: unknown) => h.storageChangedListeners.forEach((listener) => listener({
+      pg_onboarding_hint: { newValue: value },
+    }, 'local'));
+
+    change({ schemaVersion: 1, status: 'existing' });
+    expect(get(app.onboarding.hintStatus)).toBe('existing');
+    expect(get(app.onboarding.invitationVisible)).toBe(false);
+    change({ schemaVersion: 1, status: 'acknowledged' });
+    expect(get(app.onboarding.hintStatus)).toBe('acknowledged');
+    change({ schemaVersion: 2, status: 'new' });
+    expect(get(app.onboarding.hintStatus)).toBeNull();
+    expect(get(app.onboarding.invitationVisible)).toBe(false);
+    change({ schemaVersion: 1, status: 'new' });
+    expect(get(app.onboarding.hintStatus)).toBe('new');
+    expect(get(app.onboarding.invitationVisible)).toBe(true);
+  });
+
+  test('sends one acknowledgement message per popup even when both actions fire', async () => {
+    const h = await setupHarness({
+      systemStatus: okStatus(),
+      onboardingHint: { schemaVersion: 1, status: 'new' },
+    });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    app.onboarding.acknowledgeHint();
+    app.onboarding.acknowledgeHint();
+    const acknowledgements = h.sendMessage.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT');
+    expect(acknowledgements).toHaveLength(1);
+  });
+});
 
 describe('createAppModels — page protection state', () => {
   test('reports that the page is being matched generically', async () => {

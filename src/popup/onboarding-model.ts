@@ -1,4 +1,4 @@
-import { derived, get, writable, type Readable } from 'svelte/store';
+import { derived, writable, type Readable } from 'svelte/store';
 import { onboardingSteps, type OnboardingStep } from './onboarding-content';
 
 export type OnboardingModel = {
