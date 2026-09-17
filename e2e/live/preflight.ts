@@ -44,6 +44,10 @@ function runId(now: Date): string {
   return `${timestamp}-${process.pid}`;
 }
 
+export function npmExecutable(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
 export function createPreflightDependencies(rootDir = process.cwd()): PreflightDependencies {
   const readJsonVersion = (relativePath: string): string => {
     const json = JSON.parse(readFileSync(path.join(rootDir, relativePath), 'utf8')) as { version: string };
@@ -67,7 +71,7 @@ export function createPreflightDependencies(rootDir = process.cwd()): PreflightD
       REQUIRED_MODEL_ASSETS.filter((asset) => !existsSync(path.join(rootDir, MODEL_ROOT, asset))),
     pathExists: existsSync,
     runBuild: async () => {
-      await execFile('npm', ['run', 'build'], {
+      await execFile(npmExecutable(), ['run', 'build'], {
         cwd: rootDir,
         env: { ...process.env, NER_MODEL_ASSETS_REQUIRED: '1' },
         maxBuffer: 20 * 1024 * 1024,

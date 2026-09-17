@@ -32,6 +32,12 @@ See [Local AI explained](local-ai-explained.md#system-requirements) for the full
 
 The extension only runs on the supported beta sites listed above. If a supported chat tab was already open during installation, refresh it once so Chrome can inject the content script.
 
+## Optional Protect tour
+
+After installation, open the extension popup. The normal **Protect** tab remains available; a fresh installation may show a small invitation pointing to **Help** beside **More settings**. Select **Start tour** to see the optional ten-step introduction, or select **Not now** to remove the invitation. It never starts the tour automatically or changes a setting.
+
+The Help control stays available for replay. Existing installations receive the ordinary reusable Help control without the first-use emphasis. The tour explains the **Detect**, **Test**, and **Settings** labels without switching away from Protect.
+
 ## Updates
 
 Chrome normally updates installed extensions automatically. To check manually:

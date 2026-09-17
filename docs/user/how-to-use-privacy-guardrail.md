@@ -9,6 +9,12 @@ Supported beta sites:
 - `claude.ai`
 - `gemini.google.com`
 
+## Optional Protect tour
+
+Open the extension popup on the **Protect** tab and select **Help** beside **More settings** to start the optional ten-step tour. A fresh installation may show a short invitation with **Start tour** and **Not now**; it does not start the tour automatically.
+
+The tour provides brief explanations of protection, paste review, replacement and restoration, Local AI, categories, the local vault, and the **Detect**, **Test**, and **Settings** labels. Those label overviews do not switch tabs or change anything. Use **Back** and **Next** to move through the tour, or **End tour** whenever you are done. Closing or ending it does not save progress or resume automatically; select Help again later to replay it from the start.
+
 ## Paste Review
 
 1. Copy text you want to paste.

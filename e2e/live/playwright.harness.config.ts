@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: __dirname,
-  testMatch: /(?:local|extension)-harness\.spec\.ts/,
+  testMatch: /(?:local|extension|onboarding)-harness\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   retries: 0,
