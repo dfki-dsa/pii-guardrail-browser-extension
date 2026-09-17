@@ -338,14 +338,13 @@ export function supportsSynthetic(entityType: EntityType): boolean {
  */
 export function poolSize(entityType: EntityType): number {
   switch (entityType) {
-    case 'PERSON': return PERSON_POOL_SINGLE.length + PERSON_POOL_MULTI.length;
+    case 'PERSON': return PERSON_POOL_MULTI.length;
     case 'LOCATION': return LOCATION_POOL.length;
     case 'ORGANIZATION': return ORGANIZATION_POOL.length;
     case 'ADDRESS': return ADDRESS_POOL.length;
     case 'USERNAME': return USERNAME_POOL.length;
     case 'MISC': return MISC_POOL.length;
-    case 'EMAIL':
-      return (PERSON_POOL_SINGLE.length + PERSON_POOL_MULTI.length) * EMAIL_DOMAIN_POOL.length;
+    case 'EMAIL': return PERSON_POOL_MULTI.length * EMAIL_DOMAIN_POOL.length;
     case 'PHONE': return PHONE_POOL.length;
     case 'CREDIT_CARD': return CREDIT_CARD_POOL.length;
     case 'SSN': return SSN_POOL.length;
