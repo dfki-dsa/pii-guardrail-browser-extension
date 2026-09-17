@@ -19,6 +19,8 @@ import type {
   Settings,
   SettingsUpdatedMessage,
   SystemCompatibilityStatus,
+  AcknowledgeOnboardingHintRequest,
+  AcknowledgeOnboardingHintResponse,
   SystemCompatibilityStatusResponse,
 } from '../shared/message-types';
 import {
@@ -120,7 +122,7 @@ export type OnboardingAppModel = {
   hintStatus: Writable<OnboardingHintStatus | null>;
   invitationVisible: Writable<boolean>;
   tour: OnboardingModel;
-  acknowledgeHint: () => void;
+  acknowledgeHint: () => Promise<void>;
 };
 
 export type AppModels = {
@@ -193,7 +195,8 @@ export function createAppModels(): AppModels {
   const invitationVisible = writable(false);
   const tour = createOnboardingModel();
   let localHintAcknowledged = false;
-  let acknowledgementRequested = false;
+  let acknowledgementInFlight = false;
+  let hintReadVersion = 0;
   const enabled = writable(true);
   const wasmStatus = writable<StatusPill>(status('Loading...', 'muted'));
   const nerStatus = writable<StatusPill>(status('Loading...', 'muted'));
@@ -357,25 +360,75 @@ export function createAppModels(): AppModels {
     nerStatus.set(status('Off', 'muted', 'Local AI detection is off. Pattern detection remains active.'));
   }
 
+  function applyHint(hint: { status: OnboardingHintStatus } | null): void {
+    hintStatus.set(hint?.status ?? null);
+    invitationVisible.set(hint?.status === 'new');
+  }
+
   async function loadHint(): Promise<void> {
+    const readVersion = ++hintReadVersion;
     try {
       const hint = await loadOnboardingHint();
-      if (localHintAcknowledged) return;
-      hintStatus.set(hint?.status ?? null);
-      invitationVisible.set(hint?.status === 'new');
+      if (localHintAcknowledged || readVersion !== hintReadVersion) return;
+      applyHint(hint);
     } catch {
-      hintStatus.set(null);
-      invitationVisible.set(false);
+      if (!localHintAcknowledged && readVersion === hintReadVersion) applyHint(null);
     }
   }
 
-  function acknowledgeHint(): void {
+  async function reconcileAcknowledgementFailure(previousStatus: OnboardingHintStatus | null): Promise<void> {
+    // A rejected message or a negative acknowledgement means the optimistic
+    // UI cannot be trusted. Read the durable preference again; if that read
+    // also fails, restore the state that triggered this acknowledgement.
+    localHintAcknowledged = false;
+    ++hintReadVersion;
+    try {
+      applyHint(await loadOnboardingHint());
+    } catch {
+      applyHint(previousStatus ? { status: previousStatus } : null);
+    }
+  }
+
+  function isAcknowledgementResponse(response: unknown): response is AcknowledgeOnboardingHintResponse {
+    return typeof response === 'object'
+      && response !== null
+      && (response as { type?: unknown }).type === 'ONBOARDING_HINT_ACKNOWLEDGED'
+      && typeof (response as { payload?: { acknowledged?: unknown } }).payload?.acknowledged === 'boolean';
+  }
+
+  async function acknowledgeHint(): Promise<void> {
+    if (acknowledgementInFlight) return;
+
+    const previousStatus = get(hintStatus);
     localHintAcknowledged = true;
+    ++hintReadVersion;
     hintStatus.set('acknowledged');
     invitationVisible.set(false);
-    if (acknowledgementRequested) return;
-    acknowledgementRequested = true;
-    void chrome.runtime.sendMessage({ type: 'ACKNOWLEDGE_ONBOARDING_HINT' }).catch(() => undefined);
+    acknowledgementInFlight = true;
+
+    try {
+      // Runtime delivery failures can occur while the worker is restarting.
+      // Retry a small, fixed number of times without queueing duplicate sends.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const request: AcknowledgeOnboardingHintRequest = { type: 'ACKNOWLEDGE_ONBOARDING_HINT' };
+          const response: unknown = await chrome.runtime.sendMessage(request);
+          if (!isAcknowledgementResponse(response) || !response.payload.acknowledged) {
+            await reconcileAcknowledgementFailure(previousStatus);
+            return;
+          }
+          return;
+        } catch {
+          if (attempt === 2) break;
+          // Give a restarting worker a short chance to register its listener.
+          // The fixed delay and attempt cap keep this best-effort retry bounded.
+          await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        }
+      }
+      await reconcileAcknowledgementFailure(previousStatus);
+    } finally {
+      acknowledgementInFlight = false;
+    }
   }
 
   async function init(): Promise<void> {

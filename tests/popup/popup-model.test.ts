@@ -171,21 +171,108 @@ describe('createAppModels — onboarding preference', () => {
     expect(get(app.onboarding.invitationVisible)).toBe(true);
   });
 
-  test('sends one acknowledgement message per popup even when both actions fire', async () => {
+  test('reconciles a rejected acknowledgement with the durable new state', async () => {
     const h = await setupHarness({
       systemStatus: okStatus(),
       onboardingHint: { schemaVersion: 1, status: 'new' },
+      handle: (message) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT'
+        ? Promise.reject(new Error('worker unavailable'))
+        : undefined,
     });
     const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
     const app = createAppModels();
     await flushInit();
 
-    app.onboarding.acknowledgeHint();
-    app.onboarding.acknowledgeHint();
-    const acknowledgements = h.sendMessage.mock.calls
-      .map(([message]) => message)
-      .filter((message) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT');
-    expect(acknowledgements).toHaveLength(1);
+    await app.onboarding.acknowledgeHint();
+
+    expect(get(app.onboarding.hintStatus)).toBe('new');
+    expect(get(app.onboarding.invitationVisible)).toBe(true);
+    expect(h.sendMessage.mock.calls.filter(([message]) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT')).toHaveLength(3);
+  });
+
+  test('reconciles an acknowledged:false response instead of retaining an optimistic acknowledgement', async () => {
+    const h = await setupHarness({
+      systemStatus: okStatus(),
+      onboardingHint: { schemaVersion: 1, status: 'new' },
+      handle: (message) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT'
+        ? { type: 'ONBOARDING_HINT_ACKNOWLEDGED', payload: { acknowledged: false } }
+        : undefined,
+    });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    await app.onboarding.acknowledgeHint();
+
+    expect(get(app.onboarding.hintStatus)).toBe('new');
+    expect(get(app.onboarding.invitationVisible)).toBe(true);
+    expect(h.sendMessage.mock.calls.filter(([message]) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT')).toHaveLength(1);
+  });
+
+  test('treats an untyped acknowledgement response as a definitive failure', async () => {
+    const h = await setupHarness({
+      systemStatus: okStatus(),
+      onboardingHint: { schemaVersion: 1, status: 'new' },
+      handle: (message) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT'
+        ? { type: 'ONBOARDING_HINT_ACKNOWLEDGED', payload: {} }
+        : undefined,
+    });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    await app.onboarding.acknowledgeHint();
+
+    expect(get(app.onboarding.hintStatus)).toBe('new');
+    expect(get(app.onboarding.invitationVisible)).toBe(true);
+    expect(h.sendMessage.mock.calls.filter(([message]) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT')).toHaveLength(1);
+  });
+
+  test('keeps acknowledgement hidden after a successful retry', async () => {
+    let attempts = 0;
+    const h = await setupHarness({
+      systemStatus: okStatus(),
+      onboardingHint: { schemaVersion: 1, status: 'new' },
+      handle: (message) => {
+        if (message?.type !== 'ACKNOWLEDGE_ONBOARDING_HINT') return undefined;
+        attempts += 1;
+        if (attempts === 1) return Promise.reject(new Error('worker restarting'));
+        return { type: 'ONBOARDING_HINT_ACKNOWLEDGED', payload: { acknowledged: true } };
+      },
+    });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    await app.onboarding.acknowledgeHint();
+
+    expect(attempts).toBe(2);
+    expect(get(app.onboarding.hintStatus)).toBe('acknowledged');
+    expect(get(app.onboarding.invitationVisible)).toBe(false);
+    expect(h.sendMessage.mock.calls.filter(([message]) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT')).toHaveLength(2);
+  });
+
+  test('does not duplicate concurrent acknowledgement attempts', async () => {
+    let resolveAcknowledgement: ((response: unknown) => void) | undefined;
+    const h = await setupHarness({
+      systemStatus: okStatus(),
+      onboardingHint: { schemaVersion: 1, status: 'new' },
+      handle: (message) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT'
+        ? new Promise((resolve) => { resolveAcknowledgement = resolve; })
+        : undefined,
+    });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    const first = app.onboarding.acknowledgeHint();
+    const second = app.onboarding.acknowledgeHint();
+    await Promise.resolve();
+    expect(h.sendMessage.mock.calls.filter(([message]) => message?.type === 'ACKNOWLEDGE_ONBOARDING_HINT')).toHaveLength(1);
+
+    resolveAcknowledgement?.({ type: 'ONBOARDING_HINT_ACKNOWLEDGED', payload: { acknowledged: true } });
+    await Promise.all([first, second]);
+    expect(get(app.onboarding.hintStatus)).toBe('acknowledged');
   });
 });
 
