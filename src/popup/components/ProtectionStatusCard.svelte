@@ -5,23 +5,27 @@
 	import type { ResourceSummary } from '../../shared/popup-resource-summary';
 	import { AI_TRANSPARENCY_NOTICE } from '../../shared/project-links';
 
-	let { enabled, wasmStatus, nerStatus, cpuFallback, resourceSummary, composerMatch }: {
+	let { enabled, wasmStatus, nerStatus, cpuFallback, resourceSummary, composerMatch, showPasteReviewAnchor = false }: {
 		enabled: Writable<boolean>;
 		wasmStatus: Writable<StatusPill>;
 		nerStatus: Writable<StatusPill>;
 		cpuFallback: Writable<boolean>;
 		resourceSummary: Readable<ResourceSummary | null>;
 		composerMatch: Writable<ComposerMatchState | null>;
+		showPasteReviewAnchor?: boolean;
 	} = $props();
 </script>
 
-<div class="pill-row" aria-label="System status">
+<div class="pill-row" aria-label="System status" data-onboarding-anchor="protection-status">
+	{#if showPasteReviewAnchor}
+		<span class="conceptual-anchor" data-onboarding-anchor="paste-review" aria-hidden="true">Paste review</span>
+	{/if}
 	<span class="pill">
 		<span class={['dot', !$enabled && 'off']}></span>
 		<span class="key">protection</span>
 		<span class="value">{$enabled ? 'on' : 'off'}</span>
 	</span>
-	<span class="pill" title={$nerStatus.title}>
+	<span class="pill" title={$nerStatus.title} data-onboarding-anchor="local-ai-status">
 		<span class={['dot', $nerStatus.tone]}></span>
 		<span class="key">local ai</span>
 		<span class="value">{$nerStatus.label}</span>
@@ -58,7 +62,8 @@
 {/if}
 
 <style>
-	.pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+	.pill-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+	.conceptual-anchor { padding: 4px 7px; border: 1px solid #c4b5fd; border-radius: var(--radius-pill); color: #6d28d9; background: #f5f3ff; font-size: 10px; font-weight: 600; }
 	.ai-notice { margin: 8px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
 	.generic-match { margin: 6px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
 	.pill { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: white; color: var(--color-ink); font-size: 11px; }

@@ -5,7 +5,7 @@ const SETTINGS_KEY = 'pg_settings';
 
 describe('background system compatibility orchestration', () => {
   let store: Record<string, unknown>;
-  let installedListener: (() => Promise<void>) | undefined;
+  let installedListener: ((details: { reason: string }) => Promise<void>) | undefined;
   let messageListener: ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean) | undefined;
   let storageChangedListener: ((changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, areaName: string) => void) | undefined;
   let sendMessage: jest.Mock;
@@ -71,7 +71,7 @@ describe('background system compatibility orchestration', () => {
   test('auto-disables transformer Local AI once on a first critical compatibility result', async () => {
     await importWorker();
 
-    await installedListener?.();
+    await installedListener?.({ reason: 'install' });
 
     expect(store[SETTINGS_KEY]).toEqual(expect.objectContaining({
       nerProvider: 'off',
@@ -86,6 +86,18 @@ describe('background system compatibility orchestration', () => {
     expect(createDocument).toHaveBeenCalledTimes(1);
   });
 
+  test('keeps compatibility work running when onboarding preference persistence rejects', async () => {
+    await importWorker();
+    (chrome.storage.local.set as jest.Mock)
+      .mockRejectedValueOnce(new Error('onboarding storage unavailable'))
+      .mockImplementation(async (value: Record<string, unknown>) => { store = { ...store, ...value }; });
+
+    await installedListener?.({ reason: 'install' });
+
+    expect(store[SETTINGS_KEY]).toEqual(expect.objectContaining({ nerProvider: 'off' }));
+    expect(store[SYSTEM_CHECK_STORAGE_KEY]).toEqual(expect.objectContaining({ tier: 'critical' }));
+  });
+
   test('does not disable Local AI on warning memory', async () => {
     await importWorker();
     sendMessage.mockImplementationOnce(async () => ({
@@ -93,7 +105,7 @@ describe('background system compatibility orchestration', () => {
       payload: { browserMemoryGb: 4, webGpu: 'available' },
     }));
 
-    await installedListener?.();
+    await installedListener?.({ reason: 'install' });
 
     expect(store[SETTINGS_KEY]).toEqual(expect.objectContaining({ nerProvider: 'transformers' }));
     expect(store[SYSTEM_CHECK_STORAGE_KEY]).toEqual(expect.objectContaining({
@@ -111,7 +123,7 @@ describe('background system compatibility orchestration', () => {
     };
     store[SETTINGS_KEY] = { ...DEFAULT_SETTINGS, nerProvider: 'transformers' };
 
-    await installedListener?.();
+    await installedListener?.({ reason: 'install' });
 
     expect(store[SETTINGS_KEY]).toEqual(expect.objectContaining({ nerProvider: 'transformers' }));
     expect(createDocument).not.toHaveBeenCalled();
@@ -129,7 +141,7 @@ describe('background system compatibility orchestration', () => {
     };
     store[SETTINGS_KEY] = { ...DEFAULT_SETTINGS, nerProvider: 'off' };
 
-    await installedListener?.();
+    await installedListener?.({ reason: 'install' });
 
     expect(store[SETTINGS_KEY]).toEqual(expect.objectContaining({ nerProvider: 'transformers' }));
     expect(store[SYSTEM_CHECK_STORAGE_KEY]).toEqual(expect.objectContaining({
