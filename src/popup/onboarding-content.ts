@@ -24,7 +24,7 @@ export const onboardingSteps: readonly OnboardingStep[] = [
     anchor: 'paste-review',
     fallbackAnchor: 'protection-status',
     title: 'Review before pasting',
-    body: 'With protection on, review detected text before choosing Replace & paste. Keep or ignore suggestions to control what changes.',
+    body: 'While protection is on, pasting into a supported chat opens a review on that page. Keep or ignore each suggestion, then choose Replace & paste.',
     placement: 'below',
   },
   {
