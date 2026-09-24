@@ -12,8 +12,7 @@
 		vault,
 		openPrivacyPolicy,
 		openTermsOfUse,
-		openImpressum,
-		activeOnboardingAnchor = null
+		openImpressum
 	}: {
 		protection: ProtectionModel;
 		categories: CategoriesModel;
@@ -21,7 +20,6 @@
 		openPrivacyPolicy: () => void;
 		openTermsOfUse: () => void;
 		openImpressum: () => void;
-		activeOnboardingAnchor?: string | null;
 	} = $props();
 </script>
 
@@ -33,7 +31,6 @@
 		cpuFallback={protection.cpuFallback}
 		resourceSummary={protection.resourceSummary}
 		composerMatch={protection.composerMatch}
-		showPasteReviewAnchor={activeOnboardingAnchor === 'paste-review'}
 	/>
 	<CategoryChipsCard
 		categories={categories.categories}

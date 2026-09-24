@@ -66,6 +66,7 @@
           <button
             type="button"
             class:active={$activeTab === tab.id}
+            class:tour-target={$tourStep?.anchor === `tab-${tab.id}`}
             aria-current={$activeTab === tab.id ? "page" : undefined}
             data-onboarding-anchor={tab.id === "detect" ? "tab-detect" : tab.id === "test" ? "tab-test" : tab.id === "settings" ? "tab-settings" : undefined}
             onclick={() => setActiveTab(tab.id)}
@@ -85,7 +86,6 @@
           openPrivacyPolicy={settings.openPrivacyPolicy}
           openTermsOfUse={settings.openTermsOfUse}
           openImpressum={settings.openImpressum}
-          activeOnboardingAnchor={$tourStep?.anchor}
         />
       {:else if $activeTab === "detect"}
         <DetectTab {categories} />
@@ -272,6 +272,9 @@
     font-weight: 500;
     letter-spacing: 0.1px;
     cursor: pointer;
+  }
+  .tab-nav button.tour-target {
+    color: white;
   }
   .tab-nav button.active {
     border-bottom-color: var(--color-glow);

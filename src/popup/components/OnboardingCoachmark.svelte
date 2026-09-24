@@ -48,7 +48,9 @@
     const current = $step;
     if (!shell || !card || !current) return;
     let anchor = anchorFor(current);
-    if (anchor && body) {
+    if (anchor && body && !body.contains(anchor) && body.scrollTop > 0) {
+      body.scrollTop = 0;
+    } else if (anchor && body) {
       const bodyRect = body.getBoundingClientRect();
       const anchorRect = anchor.getBoundingClientRect();
       const outsideBody = anchorRect.top < bodyRect.top || anchorRect.bottom > bodyRect.bottom;
@@ -131,7 +133,7 @@
 
 {#if $step}
   <div class="tour-layer" aria-hidden="true"></div>
-  {#if position.targetLeft !== null && position.targetTop !== null && position.targetWidth !== null && position.targetHeight !== null}
+  {#if !$step.anchor.startsWith('tab-') && position.targetLeft !== null && position.targetTop !== null && position.targetWidth !== null && position.targetHeight !== null}
     <div class="target-halo" style={`left:${position.targetLeft}px; top:${position.targetTop}px; width:${position.targetWidth}px; height:${position.targetHeight}px`} aria-hidden="true"></div>
   {/if}
   <div
