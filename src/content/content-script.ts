@@ -733,8 +733,10 @@ function makePreviewResolverFactory(
       pendingByType.set(span.entity_type, offset + 1);
       const idx = baseCounter + offset + 1;
       const ph = makePlaceholder(span.entity_type, idx);
+      const tokenCount: 1 | 2 =
+        span.text.trim().split(/\s+/).length === 1 ? 1 : 2;
       const synth = supportsSynthetic(span.entity_type)
-        ? generateSyntheticValue(span.entity_type, baseCounter + offset)
+        ? generateSyntheticValue(span.entity_type, baseCounter + offset, { tokenCount })
         : null;
       const rendered = defaultMode === 'synthetic' && synth ? synth : ph;
       seen.set(key, rendered);

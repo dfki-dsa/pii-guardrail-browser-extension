@@ -120,7 +120,9 @@ export function anonymizeWithVault(
 
     result += originalText.slice(cursor, start);
 
-    const { record } = upsertEntity(vaultData, span, Date.now(), defaultMode);
+    const tokenCount: 1 | 2 =
+      span.text.trim().split(/\s+/).length === 1 ? 1 : 2;
+    const { record } = upsertEntity(vaultData, span, Date.now(), defaultMode, tokenCount);
     recordsTouched.push(record);
 
     const replacement = activeReplacement(record, defaultMode);

@@ -204,3 +204,23 @@ describe('anonymizeWithVault', () => {
     expect(map.getOriginal('[PERSON_1]')).toBe('Alice');
   });
 });
+
+describe('tokenCount threads to vault path', () => {
+  test('single-token PERSON span → single-token synthetic in vault', () => {
+    const vault = emptyVaultData();
+    const text = 'Hi, I am Sarah.';
+    const spans = [makeSpan(9, 14, 'PERSON', 'Sarah')];
+
+    const r = anonymizeWithVault(text, spans, vault, 'synthetic');
+    expect(r.vaultData.records[0].syntheticValue.split(/\s+/).length).toBe(1);
+  });
+
+  test('multi-token PERSON span → multi-token synthetic in vault', () => {
+    const vault = emptyVaultData();
+    const text = 'Meet Sarah Connor.';
+    const spans = [makeSpan(5, 17, 'PERSON', 'Sarah Connor')];
+
+    const r = anonymizeWithVault(text, spans, vault, 'synthetic');
+    expect(r.vaultData.records[0].syntheticValue.split(/\s+/).length).toBe(2);
+  });
+});
