@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { runPreflight, type PreflightDependencies } from '../../e2e/live/preflight';
 
 function dependencies(overrides: Partial<PreflightDependencies> = {}): PreflightDependencies {
@@ -24,7 +25,7 @@ describe('live E2E build preflight', () => {
     );
 
     expect(deps.runBuild).toHaveBeenCalledTimes(1);
-    expect(result.buildDir).toBe('/repo/dist');
+    expect(result.buildDir).toBe(path.join('/repo', 'dist'));
     expect(result.metadata).toMatchObject({
       commit: 'abc123',
       dirty: true,
@@ -83,7 +84,7 @@ describe('live E2E build preflight', () => {
 
   test('rejects a reused build that omits transformer assets', async () => {
     const deps = dependencies({
-      pathExists: (candidate) => candidate.endsWith('/dist/manifest.json'),
+      pathExists: (candidate) => candidate === path.join('/repo', 'dist', 'manifest.json'),
     });
 
     await expect(
