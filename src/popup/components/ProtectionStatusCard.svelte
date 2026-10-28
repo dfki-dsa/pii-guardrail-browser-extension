@@ -15,13 +15,13 @@
 	} = $props();
 </script>
 
-<div class="pill-row" aria-label="System status">
-	<span class="pill">
+<div class="pill-row" aria-label="System status" data-onboarding-anchor="protection-status">
+	<span class="pill" data-onboarding-anchor="paste-review">
 		<span class={['dot', !$enabled && 'off']}></span>
 		<span class="key">protection</span>
 		<span class="value">{$enabled ? 'on' : 'off'}</span>
 	</span>
-	<span class="pill" title={$nerStatus.title}>
+	<span class="pill" title={$nerStatus.title} data-onboarding-anchor="local-ai-status">
 		<span class={['dot', $nerStatus.tone]}></span>
 		<span class="key">local ai</span>
 		<span class="value">{$nerStatus.label}</span>
@@ -58,7 +58,7 @@
 {/if}
 
 <style>
-	.pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+	.pill-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 	.ai-notice { margin: 8px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
 	.generic-match { margin: 6px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.4; }
 	.pill { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: white; color: var(--color-ink); font-size: 11px; }

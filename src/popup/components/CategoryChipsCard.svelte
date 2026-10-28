@@ -5,8 +5,8 @@
 	let { categories, enabledCount, toggleCategory }: Pick<CategoriesModel, 'categories' | 'enabledCount' | 'toggleCategory'> = $props();
 </script>
 
-<article class="card">
-	<CardHeading title="Detection categories" badge={`${$enabledCount}/${$categories.length}`} />
+<article class="card" data-onboarding-anchor="detection-categories">
+	<div data-onboarding-anchor="categories-heading"><CardHeading title="Detection categories" badge={`${$enabledCount}/${$categories.length}`} /></div>
 	<div class="chip-grid" aria-label="Detection category controls">
 		{#each $categories as category (category.id)}
 			<button type="button" class={['chip', category.enabled && 'enabled']} aria-pressed={category.enabled} onclick={() => toggleCategory(category.id)}>

@@ -184,6 +184,9 @@ you use:
 | `pg_identity_vault` | Identity vault entries (stable replacements for recurring identities), including the original values | To produce consistent replacements across pastes, and to restore originals |
 | `pg_feedback` | Local correction/feedback records: the corrected item's text, a short excerpt of the text around it, the detected and corrected category, and a timestamp (capped at the last 1000 entries) | To improve your local experience; never uploaded |
 | `pg_system_check` | Result of the local system/compatibility check | To show whether Local AI can run on your device |
+| `pg_onboarding_hint` | A schema version and local UI status for the optional first-use Help invitation (`new`, `acknowledged`, or `existing`) | To show or suppress the extra invitation while keeping reusable Help available |
+
+`pg_onboarding_hint` is not analytics or a completion record. It contains no tour progress, timestamps, identifiers, user content, detection results, or sensitive data. The optional tour's active step exists only while the extension popup is open and is not persisted.
 
 **Where it is stored:** locally in your browser profile, on your device. It is **not** collected
 by DFKI.

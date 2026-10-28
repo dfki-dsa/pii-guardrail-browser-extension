@@ -1,4 +1,5 @@
 import type {
+  AcknowledgeOnboardingHintResponse,
   CancelDetectionRequest,
   DetectPiiRequest,
   DetectionCanceledResponse,
@@ -11,6 +12,7 @@ import type {
   SystemSignalsResponse,
 } from "../shared/message-types";
 import { loadSettings, saveSettings, logFeedback } from "../shared/storage";
+import { acknowledgeOnboardingHint, initializeOnboardingHint } from "../shared/onboarding-storage";
 import { detectionOptionsFromSettings, fallbackNerStatus } from "../shared/detection-config";
 import { DEFAULT_SETTINGS, LOCAL_AI_ACTIVITY_WINDOW_MS } from "../shared/constants";
 import { shouldAutoWarmLocalAi } from "../shared/local-ai-warmup-gate";
@@ -426,7 +428,8 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
 });
 
 function isBackgroundRequest(message: Message): boolean {
-  return message.type === "DETECT_PII"
+  return message.type === "ACKNOWLEDGE_ONBOARDING_HINT"
+    || message.type === "DETECT_PII"
     || message.type === "CANCEL_DETECTION"
     || message.type === "GET_NER_STATUS"
     || message.type === "LOG_FEEDBACK"
@@ -440,12 +443,41 @@ function isBackgroundRequest(message: Message): boolean {
     || message.type === "APPLY_CRITICAL_RECOMMENDATION";
 }
 
+function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
+  if (!sender.url) return false;
+  try {
+    const expected = new URL(chrome.runtime.getURL("popup/popup.html"));
+    const actual = new URL(sender.url);
+    // Query/hash state is harmless, but another extension page or origin must
+    // never be able to acknowledge the first-use preference.
+    return actual.protocol === expected.protocol
+      && actual.hostname === expected.hostname
+      && actual.port === expected.port
+      && actual.pathname === expected.pathname;
+  } catch {
+    return false;
+  }
+}
+
 async function handleMessage(
   message: Message,
   sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void,
 ): Promise<void> {
   switch (message.type) {
+    case "ACKNOWLEDGE_ONBOARDING_HINT": {
+      if (!isExtensionPopupSender(sender)) {
+        sendResponse({ error: "Onboarding acknowledgement is only available from the extension popup" });
+        break;
+      }
+      const acknowledged = await acknowledgeOnboardingHint();
+      sendResponse({
+        type: "ONBOARDING_HINT_ACKNOWLEDGED",
+        payload: { acknowledged },
+      } satisfies AcknowledgeOnboardingHintResponse);
+      break;
+    }
+
     case "DETECT_PII": {
       const settings = await loadSettings();
       const config = detectionOptionsFromSettings(settings, message.payload.config);
@@ -686,8 +718,18 @@ function allowContentScriptSessionStorage(): void {
 
 allowContentScriptSessionStorage();
 
-/** Initialize default settings on install. */
-chrome.runtime.onInstalled.addListener(async () => {
+/** Initialize install-scoped preferences, settings, compatibility, and icon state. */
+chrome.runtime.onInstalled.addListener(async (details) => {
+  // Invoke before this callback's first await so a popup acknowledgement that
+  // arrives immediately after install is serialized behind initialization.
+  const onboardingInitialization = initializeOnboardingHint(details?.reason ?? "unknown");
+  try {
+    // A failed preference write must not suppress existing install work.
+    await onboardingInitialization;
+  } catch {
+    // The popup remains usable with ordinary Help when storage is unavailable.
+  }
+
   const settings = await loadSettings();
   await saveSettings(settings);
   await ensureSystemCheckResult();

@@ -19,7 +19,7 @@
 	<button type="button" class="link-row" onclick={openTermsOfUse}><span class="row-label">Terms of Use</span><span class="right">›</span></button>
 	<div class="divider"></div>
 	<button type="button" class="link-row" onclick={openImpressum}><span class="row-label">Impressum</span><span class="right">›</span></button>
-	<p class="note">{LIMITS_DISCLAIMER}</p>
+	<p class="note" data-onboarding-anchor="assistive-disclaimer">{LIMITS_DISCLAIMER}</p>
 </article>
 
 <style>

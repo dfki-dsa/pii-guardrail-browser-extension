@@ -7,7 +7,7 @@
 	let { memoryEnabled, consistentReplacementMode, mappingCount, setMemoryEnabled, setReplacementMode, openVaultOptions }: Pick<VaultModel, 'memoryEnabled' | 'consistentReplacementMode' | 'mappingCount' | 'setMemoryEnabled' | 'setReplacementMode' | 'openVaultOptions'> = $props();
 </script>
 
-<article class="card">
+<article class="card" data-onboarding-anchor="identity-vault">
 	<CardHeading title="Identity vault" />
 	<div class="row">
 		<div class="row-label">Cross-session memory</div>
@@ -16,15 +16,15 @@
 	<div class="divider"></div>
 	<div class="row">
 		<div class="row-label">Replacement</div>
-		<Segmented
+		<div data-onboarding-anchor="replacement-mode"><Segmented
 			ariaLabel="Replacement mode"
 			value={$consistentReplacementMode ? 'placeholder' : 'synthetic'}
 			options={[{ value: 'placeholder', label: 'Placeholder' }, { value: 'synthetic', label: 'Synthetic' }]}
 			onchange={(mode) => setReplacementMode(mode)}
-		/>
+		/></div>
 	</div>
 	<div class="divider"></div>
-	<button type="button" class="link-row" onclick={openVaultOptions}>
+	<button type="button" class="link-row" data-onboarding-anchor="manage-vault" onclick={openVaultOptions}>
 		<span class="row-label">Manage vault</span>
 		<span class="right"><span class="count">{$mappingCount} saved</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3.5 2 6.5 5 3.5 8" /></svg></span>
 	</button>
