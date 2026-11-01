@@ -242,13 +242,12 @@ function appendCycleSuffix(base: string, cycle: number): string {
   return `${base} ${cycle}`;
 }
 
-function buildEmail(personName: string, index: number, tokenCount?: 1 | 2): string {
+function buildEmail(personName: string, index: number): string {
   const localBase = personName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '.')
     .replace(/^\.+|\.+$/g, '');
   const domain = EMAIL_DOMAIN_POOL[index % EMAIL_DOMAIN_POOL.length];
-  void tokenCount;
   return `${localBase}@${domain}`;
 }
 
@@ -259,7 +258,7 @@ function personPoolFor(tokenCount?: 1 | 2): readonly string[] {
 /**
  * Pick a synthetic replacement for a detected PII span.
  *
- * @param context.tokenCount — `1` picks PERSON_POOL_SINGLE; `2` picks PERSON_POOL_MULTI. Omit for back-compat (defaults to multi).
+ * @param context.tokenCount — `1` picks PERSON_POOL_SINGLE; `2` picks PERSON_POOL_MULTI. Omit for back-compat (defaults to multi). PERSON only — ignored for EMAIL.
  */
 export function generateSyntheticValue(
   entityType: EntityType,
@@ -280,10 +279,12 @@ export function generateSyntheticValue(
     case 'MISC':
       return pickFromPool(MISC_POOL, index);
     case 'EMAIL': {
+      // Email is out of the word-count logic: an address is always one
+      // word, so `tokenCount` must not steer it into the single-name pool.
       const seed = context?.personSeed
         ? context.personSeed
-        : pickFromPool(personPoolFor(context?.tokenCount), index);
-      return buildEmail(seed, index, context?.tokenCount);
+        : pickFromPool(personPoolFor(), index);
+      return buildEmail(seed, index);
     }
     case 'PHONE':
       return pickFromPool(PHONE_POOL, index);

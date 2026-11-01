@@ -64,14 +64,11 @@ describe('synthetic-pool', () => {
       expect(v).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+/);
     });
 
-    test('EMAIL with tokenCount=1 produces single-token local part', () => {
-      const v = generateSyntheticValue('EMAIL', 0, { tokenCount: 1 })!;
-      expect(v.split('@')[0]).not.toContain('.');
-    });
-
-    test('EMAIL with tokenCount=2 produces dotted local part', () => {
-      const v = generateSyntheticValue('EMAIL', 0, { tokenCount: 2 })!;
-      expect(v.split('@')[0]).toContain('.');
+    test('EMAIL ignores tokenCount and always gets a dotted local part', () => {
+      const none = generateSyntheticValue('EMAIL', 0)!;
+      expect(none.split('@')[0]).toContain('.');
+      expect(generateSyntheticValue('EMAIL', 0, { tokenCount: 1 })).toBe(none);
+      expect(generateSyntheticValue('EMAIL', 0, { tokenCount: 2 })).toBe(none);
     });
 
     test('LOCATION returns place name', () => {
