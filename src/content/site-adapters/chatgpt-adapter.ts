@@ -39,11 +39,50 @@ const INPUT_SELECTORS = [
   '[contenteditable="true"]',
 ];
 
-const RESPONSE_SELECTOR =
-  '[data-message-role="assistant"], [data-message-author-role="assistant"]';
+/**
+ * A third build, the "app shell" (`[data-app-shell-*]` chrome, text rendered
+ * as `[data-d-component="text"]`), carries neither role attribute. Its turns
+ * are a user/assistant pair under `[data-turn-key]`, and each message is a
+ * search unit keyed `<turn>:<index>:<role>`, e.g. `fallback-turn-0:0:user`.
+ * The role is only readable as that key's suffix. Both unit attributes are
+ * matched, since the site sets the two side by side and either may go first.
+ *
+ * Without these the adapter matches no reply on that build, and the generic
+ * fallback puts a banner over every paragraph that holds a token — including
+ * the user's own message, which only these selectors can exclude.
+ */
+const RESPONSE_SELECTOR = [
+  '[data-message-role="assistant"]',
+  '[data-message-author-role="assistant"]',
+  '[data-content-search-unit-key$=":assistant"]',
+  '[data-chatgpt-search-unit-key$=":assistant"]',
+].join(', ');
 
-const USER_MESSAGE_SELECTOR =
-  '[data-message-role="user"], [data-message-author-role="user"]';
+const USER_MESSAGE_SELECTOR = [
+  '[data-message-role="user"]',
+  '[data-message-author-role="user"]',
+  '[data-content-search-unit-key$=":user"]',
+  '[data-chatgpt-search-unit-key$=":user"]',
+].join(', ');
+
+/**
+ * Keep only the outermost of nested matches. In the app shell build the two
+ * unit-key attributes sit on a parent and child, so one message matches twice;
+ * a banner each would put the duplication straight back.
+ *
+ * Relies on `querySelectorAll` returning document order: an element's
+ * descendants follow it contiguously, so comparing against the last kept
+ * match is enough. This runs on every mutation while a reply streams.
+ */
+function outermost(elements: Iterable<HTMLElement>): HTMLElement[] {
+  const kept: HTMLElement[] = [];
+  for (const element of elements) {
+    const last = kept[kept.length - 1];
+    if (last && last.contains(element)) continue;
+    kept.push(element);
+  }
+  return kept;
+}
 
 
 /**
@@ -91,15 +130,11 @@ export class ChatGptAdapter implements SiteAdapter {
   }
 
   getResponseElements(): HTMLElement[] {
-    return Array.from(
-      document.querySelectorAll<HTMLElement>(RESPONSE_SELECTOR)
-    );
+    return outermost(document.querySelectorAll<HTMLElement>(RESPONSE_SELECTOR));
   }
 
   getUserMessageElements(): HTMLElement[] {
-    return Array.from(
-      document.querySelectorAll<HTMLElement>(USER_MESSAGE_SELECTOR)
-    );
+    return outermost(document.querySelectorAll<HTMLElement>(USER_MESSAGE_SELECTOR));
   }
 
   insertText(element: HTMLElement, text: string): void {
