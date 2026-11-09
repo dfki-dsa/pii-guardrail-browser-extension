@@ -156,12 +156,6 @@ export async function saveIdentityVault(data: IdentityVaultData): Promise<void> 
   await chrome.storage.local.set({ [VAULT_STORAGE_KEY]: data });
 }
 
-/** Clear all vault contents. Used by debug/reset paths. */
-export async function clearIdentityVault(): Promise<void> {
-  if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
-  await chrome.storage.local.remove(VAULT_STORAGE_KEY);
-}
-
 /** Look up a record by normalised key + entity type. Returns undefined if
  *  there is no match. Lookup is intentionally type-scoped so the same text
  *  detected as different types (e.g. ambiguous "Berlin" — LOCATION vs
@@ -329,38 +323,4 @@ export function deleteRecord(data: IdentityVaultData, id: string): boolean {
   if (idx === -1) return false;
   data.records.splice(idx, 1);
   return true;
-}
-
-/**
- * Build a quick-lookup index from active replacement value (placeholder
- * OR synthetic) back to the record. Used by the de-anonymiser to reverse
- * either form.
- *
- * Note: synthetic values can collide with strings naturally appearing in
- * model output ("Riley Bennett" might also be the name of a real person
- * the user is asking about). Caller must use word-boundary matching to
- * minimise false positives — see `de-anonymizer.ts` for the wrapping.
- */
-export function buildReverseIndex(
-  data: IdentityVaultData,
-): Map<string, IdentityRecord> {
-  const map = new Map<string, IdentityRecord>();
-  for (const record of data.records) {
-    map.set(record.placeholder, record);
-    if (record.syntheticValue) {
-      // Last-write-wins on synthetic collisions across records: rare,
-      // but possible if two PERSON records were assigned the same name.
-      // The vault counter is supposed to prevent this; we log it for
-      // defensive tracing.
-      if (map.has(record.syntheticValue)) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[PG:vault] synthetic value collision',
-          record.syntheticValue,
-        );
-      }
-      map.set(record.syntheticValue, record);
-    }
-  }
-  return map;
 }

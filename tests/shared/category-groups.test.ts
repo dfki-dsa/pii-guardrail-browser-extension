@@ -4,7 +4,6 @@ import {
   GROUP_MEMBERS,
   GROUP_DEFAULT_ON,
   groupForEntity,
-  entitiesForGroup,
   defaultGroupsEnabled,
   filterByGroup,
 } from '../../src/shared/category-groups';
@@ -50,42 +49,42 @@ describe('groupForEntity', () => {
 
 // --- Group → entity types + default state ---
 
-describe('entitiesForGroup', () => {
+describe('GROUP_MEMBERS', () => {
   test('Identity contains PERSON and USERNAME', () => {
-    expect(entitiesForGroup('Identity')).toEqual(expect.arrayContaining(['PERSON', 'USERNAME']));
-    expect(entitiesForGroup('Identity')).toHaveLength(2);
+    expect(GROUP_MEMBERS['Identity']).toEqual(expect.arrayContaining(['PERSON', 'USERNAME']));
+    expect(GROUP_MEMBERS['Identity']).toHaveLength(2);
   });
 
   test('Contact contains EMAIL, PHONE, ADDRESS', () => {
-    const members = entitiesForGroup('Contact');
+    const members = GROUP_MEMBERS['Contact'];
     expect(members).toEqual(expect.arrayContaining(['EMAIL', 'PHONE', 'ADDRESS']));
     expect(members).toHaveLength(3);
   });
 
   test('Financial contains CREDIT_CARD, IBAN, BANK_ACCOUNT, SSN', () => {
-    const members = entitiesForGroup('Financial');
+    const members = GROUP_MEMBERS['Financial'];
     expect(members).toEqual(expect.arrayContaining(['CREDIT_CARD', 'IBAN', 'BANK_ACCOUNT', 'SSN']));
     expect(members).toHaveLength(4);
   });
 
   test('Network contains IP_ADDRESS only', () => {
-    expect(entitiesForGroup('Network')).toEqual(['IP_ADDRESS']);
+    expect(GROUP_MEMBERS['Network']).toEqual(['IP_ADDRESS']);
   });
 
   test('Location contains LOCATION only', () => {
-    expect(entitiesForGroup('Location')).toEqual(['LOCATION']);
+    expect(GROUP_MEMBERS['Location']).toEqual(['LOCATION']);
   });
 
   test('Password contains PASSWORD only', () => {
-    expect(entitiesForGroup('Password')).toEqual(['PASSWORD']);
+    expect(GROUP_MEMBERS['Password']).toEqual(['PASSWORD']);
   });
 
   test('Organization contains ORGANIZATION only', () => {
-    expect(entitiesForGroup('Organization')).toEqual(['ORGANIZATION']);
+    expect(GROUP_MEMBERS['Organization']).toEqual(['ORGANIZATION']);
   });
 
   test('Low-signal contains URL, DATE, and MISC', () => {
-    const members = entitiesForGroup('Low-signal');
+    const members = GROUP_MEMBERS['Low-signal'];
     expect(members).toEqual(expect.arrayContaining(['URL', 'DATE', 'MISC']));
     expect(members).toHaveLength(3);
   });

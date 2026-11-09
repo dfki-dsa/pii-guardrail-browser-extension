@@ -10,7 +10,7 @@
  */
 
 import { mount, unmount } from 'svelte';
-import { ENTITY_TYPES, type PiiSpan } from '../../shared/message-types';
+import type { PiiSpan } from '../../shared/message-types';
 import overlayCss from './overlay-styles.css';
 import ReviewOverlayComponent from './ReviewOverlay.svelte';
 import {
@@ -20,7 +20,6 @@ import {
   type PreviewResolverFactory,
 } from './overlay-model';
 
-export const OVERLAY_ENTITY_TYPES = ENTITY_TYPES;
 export type { OverlayCallbacks, PreviewResolver, PreviewResolverFactory };
 
 /**

@@ -44,10 +44,6 @@ export function groupForEntity(entityType: EntityType): GroupName | null {
   return ENTITY_TO_GROUP[entityType] ?? null;
 }
 
-export function entitiesForGroup(group: GroupName): readonly EntityType[] {
-  return GROUP_MEMBERS[group];
-}
-
 export function defaultGroupsEnabled(): Record<GroupName, boolean> {
   return { ...GROUP_DEFAULT_ON };
 }

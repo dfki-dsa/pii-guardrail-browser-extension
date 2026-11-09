@@ -64,19 +64,3 @@ export async function detectPii(
   return JSON.parse(resultJson) as PiiSpan[];
 }
 
-/**
- * Check if the NER model is loaded in the WASM module.
- */
-export async function isNerReady(): Promise<boolean> {
-  await ensureWasm();
-  return wasmModule!.is_ner_ready();
-}
-
-/**
- * Get the default pipeline configuration from WASM.
- */
-export async function getDefaultConfig(): Promise<Required<Omit<DetectionOptions, 'ner_provider'>>> {
-  await ensureWasm();
-  const json = wasmModule!.default_config();
-  return JSON.parse(json) as Required<Omit<DetectionOptions, 'ner_provider'>>;
-}

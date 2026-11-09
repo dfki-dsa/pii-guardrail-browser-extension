@@ -1,5 +1,5 @@
 import { anonymize } from '../../src/shared/anonymizer';
-import { deAnonymize } from '../../src/shared/de-anonymizer';
+import { resolveText } from '../../src/shared/placeholder-resolver';
 import { EntityMap } from '../../src/shared/entity-map';
 import type { PiiSpan } from '../../src/shared/message-types';
 
@@ -38,7 +38,7 @@ describe('round-trip: anonymize → de-anonymize', () => {
     // Simulate AI response that uses the placeholders
     const aiResponse =
       'Hello [PERSON_1], I can help you with your [EMAIL_1] account in [LOCATION_1].';
-    const restored = deAnonymize(aiResponse, anonymized.entityMap);
+    const restored = resolveText(aiResponse, anonymized.entityMap).deAnonText;
     expect(restored).toBe(
       'Hello David Smith, I can help you with your david@corp.com account in Berlin.'
     );
@@ -59,7 +59,7 @@ describe('round-trip: anonymize → de-anonymize', () => {
     );
 
     const aiResponse = '[PERSON_1] should visit [LOCATION_2] with [PERSON_2].';
-    const restored = deAnonymize(aiResponse, anonymized.entityMap);
+    const restored = resolveText(aiResponse, anonymized.entityMap).deAnonText;
     expect(restored).toBe('Alice should visit London with Bob.');
   });
 
@@ -76,7 +76,7 @@ describe('round-trip: anonymize → de-anonymize', () => {
     // Simulate loading in a new context
     const restoredMap = new EntityMap(stored);
     const aiResponse = 'Dear [PERSON_1], your email [EMAIL_1] is confirmed.';
-    const restored = deAnonymize(aiResponse, restoredMap);
+    const restored = resolveText(aiResponse, restoredMap).deAnonText;
     expect(restored).toBe('Dear David, your email david@test.com is confirmed.');
   });
 
@@ -99,7 +99,7 @@ describe('round-trip: anonymize → de-anonymize', () => {
     const restoredMap = new EntityMap(anonymized.entityMap.toStored());
     const aiResponse =
       'Confirmed: [ADDRESS_1], [URL_1], [USERNAME_1], [PASSWORD_1], [BANK_ACCOUNT_1].';
-    const restored = deAnonymize(aiResponse, restoredMap);
+    const restored = resolveText(aiResponse, restoredMap).deAnonText;
 
     expect(restored).toBe(
       'Confirmed: 42 Cedar St, https://portal.example/private, alice_admin, correct-horse, 1234567890.'
@@ -119,10 +119,10 @@ describe('round-trip: anonymize → de-anonymize', () => {
       '[PERSON_1] works at [ORGANIZATION_1] in [LOCATION_1].'
     );
 
-    const restored = deAnonymize(
+    const restored = resolveText(
       'Draft reply for [PERSON_1] at [ORGANIZATION_1] in [LOCATION_1].',
       new EntityMap(anonymized.entityMap.toStored())
-    );
+    ).deAnonText;
 
     expect(restored).toBe('Draft reply for Ada Lovelace at Acme Corp in Berlin.');
   });
@@ -132,7 +132,7 @@ describe('round-trip: anonymize → de-anonymize', () => {
     const anonymized = anonymize(text, []);
     expect(anonymized.text).toBe(text);
 
-    const restored = deAnonymize(anonymized.text, anonymized.entityMap);
+    const restored = resolveText(anonymized.text, anonymized.entityMap).deAnonText;
     expect(restored).toBe(text);
   });
 });

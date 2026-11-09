@@ -6,16 +6,25 @@
  */
 
 import { anonymizeWithVault } from '../../src/shared/anonymizer';
-import {
-  deAnonymizeWithVault,
-  hasReversibleContent,
-} from '../../src/shared/de-anonymizer';
-import { emptyVaultData, updateRecord } from '../../src/shared/identity-vault';
+import { augmentEntityMap } from '../../src/shared/entity-map-augment';
+import { resolveText } from '../../src/shared/placeholder-resolver';
+import { emptyVaultData, updateRecord, type IdentityVaultData } from '../../src/shared/identity-vault';
 import { EntityMap } from '../../src/shared/entity-map';
 import type { PiiSpan } from '../../src/shared/message-types';
 
 function makeSpan(start: number, end: number, type: string, text: string): PiiSpan {
   return { start, end, entity_type: type as any, score: 0.9, text, source: 'regex' };
+}
+
+/** Mirror of the runtime reversal path (response observer + clipboard
+ *  interceptor): the conversation entity map is augmented with both forms
+ *  of every vault record it references, then resolved. */
+function deAnonymizeWithVault(text: string, map: EntityMap, vault: IdentityVaultData): string {
+  return resolveText(text, augmentEntityMap(map.toStored(), vault, true)).deAnonText;
+}
+
+function hasReversibleContent(text: string, map: EntityMap, vault: IdentityVaultData): boolean {
+  return resolveText(text, augmentEntityMap(map.toStored(), vault, true)).matches.length > 0;
 }
 
 describe('anonymizeWithVault', () => {
@@ -95,7 +104,7 @@ describe('anonymizeWithVault', () => {
 
     // Simulate LLM response containing both placeholders verbatim.
     const llmResp1 = 'Sure, [PERSON_1] enjoys [LOCATION_1] very much.';
-    const reversed1 = deAnonymizeWithVault(llmResp1, vault);
+    const reversed1 = deAnonymizeWithVault(llmResp1, r.entityMap, vault);
     expect(reversed1).toBe('Sure, Alice enjoys Berlin very much.');
 
     // Now flip Alice to synthetic and re-anonymise.
@@ -110,28 +119,27 @@ describe('anonymizeWithVault', () => {
 
     // De-anon should reverse both forms.
     const llmResp2 = `Hello ${synthAlice}, [LOCATION_1] is lovely.`;
-    const reversed2 = deAnonymizeWithVault(llmResp2, vault);
+    const reversed2 = deAnonymizeWithVault(llmResp2, r2.entityMap, vault);
     expect(reversed2).toBe('Hello Alice, Berlin is lovely.');
   });
 
   test('hasReversibleContent flags both placeholder and synthetic', () => {
     const vault = emptyVaultData();
     const spans = [makeSpan(0, 5, 'PERSON', 'Alice')];
-    anonymizeWithVault('Alice here', spans, vault, 'placeholder');
+    const r = anonymizeWithVault('Alice here', spans, vault, 'placeholder');
 
-    expect(hasReversibleContent('Hi [PERSON_1]', vault)).toBe(true);
-    expect(hasReversibleContent('Nothing here', vault)).toBe(false);
+    expect(hasReversibleContent('Hi [PERSON_1]', r.entityMap, vault)).toBe(true);
+    expect(hasReversibleContent('Nothing here', r.entityMap, vault)).toBe(false);
 
     // After flipping to synthetic:
     const aliceRec = vault.records[0];
     updateRecord(vault, aliceRec.id, { replacementMode: 'synthetic' });
-    expect(hasReversibleContent(`Hello ${aliceRec.syntheticValue}`, vault)).toBe(true);
+    expect(hasReversibleContent(`Hello ${aliceRec.syntheticValue}`, r.entityMap, vault)).toBe(true);
   });
 
   test('whole-word matching prevents false positives for synthetic substrings', () => {
     const vault = emptyVaultData();
     const r = anonymizeWithVault('Alice', [makeSpan(0, 5, 'PERSON', 'Alice')], vault, 'placeholder');
-    void r; // anchor compile
 
     const aliceRec = vault.records[0];
     // Set a synthetic value that risks false positives.
@@ -142,7 +150,7 @@ describe('anonymizeWithVault', () => {
 
     // "Park" appears as part of "Parkour" — must NOT be reversed.
     const llmResp = 'They went parkour at the park entrance.';
-    const reversed = deAnonymizeWithVault(llmResp, vault);
+    const reversed = deAnonymizeWithVault(llmResp, r.entityMap, vault);
     // "park" with lowercase doesn't word-match (case-sensitive), so no
     // changes. With "Park", whole-word matches "park entrance" boundary
     // and would replace, but our test text uses lowercase.
@@ -156,27 +164,27 @@ describe('anonymizeWithVault', () => {
       makeSpan(0, 5, 'PERSON', 'Alice'),
       makeSpan(10, 13, 'PERSON', 'Bob'),
     ];
-    anonymizeWithVault(text, spans, vault, 'placeholder');
+    const r = anonymizeWithVault(text, spans, vault, 'placeholder');
 
     // Each form the LLM might emit is reversed.
-    expect(deAnonymizeWithVault('Hi PERSON 1 and PERSON_2!', vault)).toBe(
+    expect(deAnonymizeWithVault('Hi PERSON 1 and PERSON_2!', r.entityMap, vault)).toBe(
       'Hi Alice and Bob!',
     );
-    expect(deAnonymizeWithVault('Hi [person_1] and [PERSON 2]!', vault)).toBe(
+    expect(deAnonymizeWithVault('Hi [person_1] and [PERSON 2]!', r.entityMap, vault)).toBe(
       'Hi Alice and Bob!',
     );
-    expect(deAnonymizeWithVault('Hi PERSON1 and PERSON2!', vault)).toBe(
+    expect(deAnonymizeWithVault('Hi PERSON1 and PERSON2!', r.entityMap, vault)).toBe(
       'Hi Alice and Bob!',
     );
     // Mixed canonical + mangled in one response.
-    expect(deAnonymizeWithVault('[PERSON_1] and PERSON 2.', vault)).toBe(
+    expect(deAnonymizeWithVault('[PERSON_1] and PERSON 2.', r.entityMap, vault)).toBe(
       'Alice and Bob.',
     );
   });
 
   test('mangled pass does not interfere with synthetic pass', () => {
     const vault = emptyVaultData();
-    anonymizeWithVault(
+    const r = anonymizeWithVault(
       'Alice here',
       [makeSpan(0, 5, 'PERSON', 'Alice')],
       vault,
@@ -188,7 +196,7 @@ describe('anonymizeWithVault', () => {
 
     // Response contains both the synthetic value and a mangled placeholder.
     const response = `Hi PERSON 1, also known as ${synth}.`;
-    expect(deAnonymizeWithVault(response, vault)).toBe(
+    expect(deAnonymizeWithVault(response, r.entityMap, vault)).toBe(
       'Hi Alice, also known as Alice.',
     );
   });
