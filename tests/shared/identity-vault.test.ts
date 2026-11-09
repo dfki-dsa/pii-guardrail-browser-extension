@@ -7,10 +7,8 @@ import {
   deleteRecord,
   recordsByRecency,
   activeReplacement,
-  buildReverseIndex,
   loadIdentityVault,
   saveIdentityVault,
-  clearIdentityVault,
   type IdentityVaultData,
   type IdentityRecord,
 } from '../../src/shared/identity-vault';
@@ -261,24 +259,6 @@ describe('identity-vault', () => {
     });
   });
 
-  describe('buildReverseIndex', () => {
-    test('maps both placeholder and synthetic back to record', () => {
-      const data = emptyVaultData();
-      const r = upsertEntity(data, makeSpan('PERSON', 'Alice')).record;
-      const index = buildReverseIndex(data);
-      expect(index.get(r.placeholder)).toBe(r);
-      expect(index.get(r.syntheticValue)).toBe(r);
-    });
-
-    test('omits empty synthetic values', () => {
-      const data = emptyVaultData();
-      const r = upsertEntity(data, makeSpan('PASSWORD', 'hunter2')).record;
-      const index = buildReverseIndex(data);
-      expect(index.get(r.placeholder)).toBe(r);
-      expect(index.has('')).toBe(false);
-    });
-  });
-
   describe('storage round-trip', () => {
     let storageBacking: Record<string, unknown> = {};
     let savedSetCalls: any[];
@@ -316,15 +296,6 @@ describe('identity-vault', () => {
     });
 
     test('load returns empty vault when storage empty', async () => {
-      const loaded = await loadIdentityVault();
-      expect(loaded.records).toEqual([]);
-    });
-
-    test('clearIdentityVault removes the storage entry', async () => {
-      const data = emptyVaultData();
-      upsertEntity(data, makeSpan('PERSON', 'Alice'));
-      await saveIdentityVault(data);
-      await clearIdentityVault();
       const loaded = await loadIdentityVault();
       expect(loaded.records).toEqual([]);
     });

@@ -1,4 +1,4 @@
-import type { EntityType, PiiSpan } from './message-types';
+import type { PiiSpan } from './message-types';
 import { placeholder } from './constants';
 import type { StoredEntityMap } from './storage';
 

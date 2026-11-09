@@ -10,7 +10,7 @@ import type {
   SystemCompatibilityStatusResponse,
   SystemSignalsResponse,
 } from "../shared/message-types";
-import { loadSettings, saveSettings, logFeedback } from "../shared/storage";
+import { loadSettings, saveSettings } from "../shared/storage";
 import { detectionOptionsFromSettings, fallbackNerStatus } from "../shared/detection-config";
 import { DEFAULT_SETTINGS, LOCAL_AI_ACTIVITY_WINDOW_MS } from "../shared/constants";
 import { shouldAutoWarmLocalAi } from "../shared/local-ai-warmup-gate";
@@ -429,7 +429,6 @@ function isBackgroundRequest(message: Message): boolean {
   return message.type === "DETECT_PII"
     || message.type === "CANCEL_DETECTION"
     || message.type === "GET_NER_STATUS"
-    || message.type === "LOG_FEEDBACK"
     || message.type === "OPEN_OPTIONS_PAGE"
     || message.type === "GET_SYSTEM_COMPATIBILITY_STATUS"
     || message.type === "SET_LOCAL_AI_DETECTION"
@@ -514,12 +513,6 @@ async function handleMessage(
           ),
         } satisfies NerStatusResponse);
       }
-      break;
-    }
-
-    case "LOG_FEEDBACK": {
-      await logFeedback(message.payload);
-      sendResponse({ ok: true });
       break;
     }
 

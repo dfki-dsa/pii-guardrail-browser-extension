@@ -89,9 +89,7 @@ export type TestModel = {
   testInput: Writable<string>;
   isRunning: Writable<boolean>;
   resultText: Writable<string>;
-  runCount: Writable<number>;
   feedbackCounts: Writable<FeedbackCounts>;
-  runMockDetection: () => Promise<void>;
   runDetection: () => Promise<void>;
   clearFeedback: () => Promise<void>;
 };
@@ -205,7 +203,6 @@ export function createAppModels(): AppModels {
   const testInput = writable("Hi, I'm Dana Reyes (dana@acme.io), card 4242 4242 4242 4242.");
   const isRunning = writable(false);
   const resultText = writable('');
-  const runCount = writable(0);
   const feedbackCounts = writable<FeedbackCounts>({ confirmed: 0, ignored: 0, pending: 0 });
 
   const minConfidence = writable(0.5);
@@ -411,7 +408,6 @@ export function createAppModels(): AppModels {
       const nerLine = ner ? formatNerStatusLine(ner) : '';
       const body = spans.length === 0 ? formatNoPii(response.payload.timings) : formatResults(spans, response.payload.timings);
       resultText.set(nerLine ? `${nerLine}\n\n${body}` : body);
-      runCount.update((count) => count + 1);
     } catch (error) {
       resultText.set(`Error: ${error}`);
     } finally {
@@ -456,9 +452,7 @@ export function createAppModels(): AppModels {
       testInput,
       isRunning,
       resultText,
-      runCount,
       feedbackCounts,
-      runMockDetection: runDetection,
       runDetection,
       clearFeedback: async () => { await clearFeedbackLog(); await refreshStats(); },
     },

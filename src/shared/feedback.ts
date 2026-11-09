@@ -1,4 +1,4 @@
-import type { AllowlistEntry, BlocklistEntry, FeedbackEntry, PiiSpan } from './message-types';
+import type { AllowlistEntry, BlocklistEntry, PiiSpan } from './message-types';
 import { getFeedbackLog } from './storage';
 import { matchPattern } from './pattern-matcher';
 import { stringIndexToByteOffset } from './text-offsets';
@@ -109,18 +109,4 @@ export function applyBlocklist(text: string, spans: PiiSpan[], blocklist: Blockl
     }
   }
   return result;
-}
-
-/**
- * Apply adaptive thresholds to filter spans per entity type.
- */
-export function applyAdaptiveThresholds(
-  spans: PiiSpan[],
-  thresholds: Record<string, number>,
-  defaultThreshold: number
-): PiiSpan[] {
-  return spans.filter((span) => {
-    const threshold = thresholds[span.entity_type] ?? defaultThreshold;
-    return span.score >= threshold;
-  });
 }

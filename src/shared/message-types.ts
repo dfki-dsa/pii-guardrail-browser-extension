@@ -200,11 +200,6 @@ export interface NerStatusChangedBroadcast {
   payload: NerStatus;
 }
 
-export interface LogFeedbackRequest {
-  type: 'LOG_FEEDBACK';
-  payload: FeedbackEntry;
-}
-
 export interface SettingsUpdatedMessage {
   type: 'SETTINGS_UPDATED';
   payload: Settings;
@@ -407,7 +402,6 @@ export type Message =
   | NerStatusChangedBroadcast
   | OffscreenPingRequest
   | OffscreenPongResponse
-  | LogFeedbackRequest
   | SettingsUpdatedMessage
   | OpenOptionsPageRequest
   | GetSystemCompatibilityStatusRequest

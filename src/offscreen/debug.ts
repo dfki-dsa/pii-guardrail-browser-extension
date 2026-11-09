@@ -19,10 +19,6 @@ export function initDebugFlag(): void {
   });
 }
 
-export function isDebugEnabled(): boolean {
-  return debugEnabled;
-}
-
 export function debugLog(...args: unknown[]): void {
   if (debugEnabled) console.log(...args);
 }
