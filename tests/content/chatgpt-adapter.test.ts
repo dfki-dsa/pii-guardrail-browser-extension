@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 
 import { ChatGptAdapter } from '../../src/content/site-adapters/chatgpt-adapter';
+import { findLooseTokenAnchors } from '../../src/content/banner-anchor';
 import {
   PasteInterceptor,
   type ComposerMatch,
@@ -107,6 +108,149 @@ describe('ChatGptAdapter', () => {
       adapter.insertText(composer, 'X');
 
       expect(composer.value).toBe('AXB');
+    });
+  });
+
+  describe('app shell client', () => {
+    /**
+     * Turn markup of the build with `[data-app-shell-*]` chrome, which has no
+     * role attributes. Ancestor chain and unit keys as captured from
+     * chatgpt.com on 2026-11-08 (`fallback-turn-0:0:user`,
+     * `fallback-turn-0:1:assistant`); paragraph content is synthetic.
+     *
+     * The second turn is the first one's sibling with the two unit-key
+     * attributes nested the other way round, since the site sets them side
+     * by side and the adapter promises to cope with either order.
+     */
+    function mountAppShellClient(): void {
+      document.body.innerHTML = `
+        <main data-app-shell-main-surface="browser">
+          <div data-thread-find-target="conversation">
+            <div data-turn-key="a40187b1">
+              <div data-content-search-turn-key="fallback-turn-0">
+                <div data-chatgpt-search-unit-key="fallback-turn-0:0:user">
+                  <div data-content-search-unit-key="fallback-turn-0:0:user">
+                    <div data-user-message-bubble="true">
+                      <div><p data-d-component="text">Please reply to [PERSON_1].</p></div>
+                    </div>
+                  </div>
+                </div>
+                <div data-chatgpt-search-unit-key="fallback-turn-0:1:assistant">
+                  <div data-content-search-unit-key="fallback-turn-0:1:assistant">
+                    <p data-d-component="text">From: [PERSON_1]</p>
+                    <div data-d-component="divider"></div>
+                    <p data-d-component="text">Send the money to [PERSON_4].</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div data-turn-key="b51298c2">
+              <div data-content-search-turn-key="fallback-turn-1">
+                <div data-content-search-unit-key="fallback-turn-1:0:user">
+                  <div data-chatgpt-search-unit-key="fallback-turn-1:0:user">
+                    <div data-user-message-bubble="true">
+                      <div><p data-d-component="text">And cc [PERSON_2].</p></div>
+                    </div>
+                  </div>
+                </div>
+                <div data-content-search-unit-key="fallback-turn-1:1:assistant">
+                  <div data-chatgpt-search-unit-key="fallback-turn-1:1:assistant">
+                    <p data-d-component="text">Done, [PERSON_2] is copied.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>`;
+    }
+
+    /** The unit key an element carries, whichever of the two attributes it is. */
+    function unitKey(element: HTMLElement): string | null {
+      return (
+        element.getAttribute('data-chatgpt-search-unit-key') ??
+        element.getAttribute('data-content-search-unit-key')
+      );
+    }
+
+    it('finds one element per assistant message, not one per nested unit key', () => {
+      mountAppShellClient();
+      const responses = adapter.getResponseElements();
+      expect(responses.map(unitKey)).toEqual([
+        'fallback-turn-0:1:assistant',
+        'fallback-turn-1:1:assistant',
+      ]);
+      expect(responses[0].textContent).toContain('[PERSON_4]');
+      expect(responses[1].textContent).toContain('[PERSON_2]');
+    });
+
+    it('keeps the outer unit whichever attribute the site nests on top', () => {
+      mountAppShellClient();
+      const [first, second] = adapter.getResponseElements();
+      // Turn 0 nests chatgpt > content, turn 1 the other way round. Either
+      // way the kept element must be the one that holds the whole message.
+      expect(first.hasAttribute('data-chatgpt-search-unit-key')).toBe(true);
+      expect(first.querySelector('[data-content-search-unit-key]')).not.toBeNull();
+      expect(second.hasAttribute('data-content-search-unit-key')).toBe(true);
+      expect(second.querySelector('[data-chatgpt-search-unit-key]')).not.toBeNull();
+      // Nothing returned may sit inside another returned element.
+      expect(first.contains(second)).toBe(false);
+      expect(second.contains(first)).toBe(false);
+    });
+
+    it('finds one element per user message so none ever carries a banner', () => {
+      mountAppShellClient();
+      const users = adapter.getUserMessageElements();
+      expect(users.map(unitKey)).toEqual(['fallback-turn-0:0:user', 'fallback-turn-1:0:user']);
+      expect(users[0].textContent).toContain('Please reply to');
+      expect(users[1].textContent).toContain('And cc');
+    });
+
+    it('never files a user message as a reply or a reply as a user message', () => {
+      mountAppShellClient();
+      const responses = adapter.getResponseElements();
+      const users = adapter.getUserMessageElements();
+      for (const user of users) {
+        for (const response of responses) {
+          expect(user).not.toBe(response);
+          expect(user.contains(response)).toBe(false);
+          expect(response.contains(user)).toBe(false);
+        }
+      }
+      // The role is a key suffix: no reply may carry a user key and vice versa.
+      expect(responses.every((el) => unitKey(el)?.endsWith(':assistant'))).toBe(true);
+      expect(users.every((el) => unitKey(el)?.endsWith(':user'))).toBe(true);
+    });
+
+    it('matches on the role suffix alone, not on the turn or index', () => {
+      // A reply that is the first unit of its turn, under a differently
+      // shaped turn key, must still be found by the `:assistant` suffix.
+      document.body.innerHTML = `
+        <main data-app-shell-main-surface="browser">
+          <div data-chatgpt-search-unit-key="conv-9f3:0:assistant">
+            <div data-content-search-unit-key="conv-9f3:0:assistant">
+              <p data-d-component="text">Hello</p>
+            </div>
+          </div>
+          <div data-chatgpt-search-unit-key="conv-9f3:1:user">
+            <div data-content-search-unit-key="conv-9f3:1:user">
+              <p data-d-component="text">Hi</p>
+            </div>
+          </div>
+        </main>`;
+      expect(adapter.getResponseElements().map(unitKey)).toEqual(['conv-9f3:0:assistant']);
+      expect(adapter.getUserMessageElements().map(unitKey)).toEqual(['conv-9f3:1:user']);
+    });
+
+    it('leaves the generic fallback nothing to annotate', () => {
+      mountAppShellClient();
+      const anchors = findLooseTokenAnchors(
+        document.body,
+        adapter.getResponseElements(),
+        null,
+        (text) => /\[PERSON_\d+\]/.test(text),
+        adapter.getUserMessageElements(),
+      );
+      expect(anchors).toEqual([]);
     });
   });
 
