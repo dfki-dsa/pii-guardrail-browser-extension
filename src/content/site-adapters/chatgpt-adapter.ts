@@ -40,7 +40,7 @@ const INPUT_SELECTORS = [
 ];
 
 /**
- * A third build, the "app shell" (`[data-app-shell-*]` chrome, text rendered
+ * The "app shell" build (`[data-app-shell-*]` chrome, text rendered
  * as `[data-d-component="text"]`), carries neither role attribute. Its turns
  * are a user/assistant pair under `[data-turn-key]`, and each message is a
  * search unit keyed `<turn>:<index>:<role>`, e.g. `fallback-turn-0:0:user`.
