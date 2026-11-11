@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 
 import { PasteInterceptor, type PasteInterceptorCallbacks } from '../../src/content/paste-interceptor';
-import type { SiteAdapter } from '../../src/content/site-adapters/adapter-interface';
+import { insertTextCompat, type SiteAdapter } from '../../src/content/site-adapters/adapter-interface';
 import { DEFAULT_SETTINGS } from '../../src/shared/constants';
 
 describe('PasteInterceptor', () => {
@@ -551,6 +551,125 @@ describe('PasteInterceptor', () => {
       expect(insertText).toHaveBeenCalledWith(composer, 'Redacted [PERSON_1] text.');
 
       interceptor.stop();
+    });
+
+    it('says whether the anonymized text had somewhere to land', () => {
+      const input = document.createElement('textarea');
+      document.body.append(input);
+
+      const landed = new PasteInterceptor(
+        { ...adapter, getInputElement: () => input, insertText: jest.fn() },
+        makeCallbacks(),
+      );
+      const lost = new PasteInterceptor(adapter, makeCallbacks());
+
+      expect(landed.pasteAnonymized('Redacted [PERSON_1] text.')).toBe(true);
+      expect(lost.pasteAnonymized('Redacted [PERSON_1] text.')).toBe(false);
+    });
+  });
+
+  describe('swapping text that was already inserted', () => {
+    const REPLACED = 'Dear [PERSON_1], your code is [PHONE_1].';
+    const ORIGINAL = 'Dear Jane Doe, your code is 0431 555 0199.';
+
+    /** An adapter that really inserts, the way every site adapter does. */
+    const insertingAdapter = (input: HTMLElement): SiteAdapter => ({
+      ...adapter,
+      getInputElement: () => input,
+      insertText: (element, text) => insertTextCompat(element, text),
+    });
+
+    it('restores the original in a textarea and leaves the rest of the draft alone', async () => {
+      const input = document.createElement('textarea');
+      input.value = 'Draft: ';
+      document.body.append(input);
+      input.setSelectionRange(7, 7);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      interceptor.pasteAnonymized(REPLACED);
+      expect(input.value).toBe(`Draft: ${REPLACED}`);
+
+      await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(true);
+      expect(input.value).toBe(`Draft: ${ORIGINAL}`);
+    });
+
+    it('restores the original in a rich editor', async () => {
+      const input = document.createElement('div');
+      input.setAttribute('contenteditable', 'true');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      interceptor.pasteAnonymized(REPLACED);
+      expect(input.textContent).toBe(REPLACED);
+
+      await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(true);
+      expect(input.textContent).toBe(ORIGINAL);
+    });
+
+    it('changes nothing once the user has edited the inserted text', async () => {
+      const input = document.createElement('textarea');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      interceptor.pasteAnonymized(REPLACED);
+      input.value = 'Dear [PERSON_1], I changed my mind about the rest.';
+
+      await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+      expect(input.value).toBe('Dear [PERSON_1], I changed my mind about the rest.');
+    });
+
+    it('changes nothing once the message was sent and the box emptied', async () => {
+      const input = document.createElement('div');
+      input.setAttribute('contenteditable', 'true');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      interceptor.pasteAnonymized(REPLACED);
+      input.replaceChildren();
+
+      await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+      expect(input.textContent).toBe('');
+    });
+
+    it('reports failure when the editor puts the old text back', async () => {
+      // An editor that owns its content redraws from its own state. A swap it
+      // did not accept must not be reported as done.
+      const input = document.createElement('textarea');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      interceptor.pasteAnonymized(REPLACED);
+      input.addEventListener('input', () => {
+        input.value = REPLACED;
+      });
+
+      await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+      expect(input.value).toBe(REPLACED);
+    });
+
+    it('has nothing to swap before anything was inserted, or after the box is gone', async () => {
+      const input = document.createElement('textarea');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+
+      interceptor.pasteAnonymized(REPLACED);
+      input.remove();
+
+      await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+    });
+
+    it('treats a swap for identical text as done only while the text is still there', async () => {
+      const input = document.createElement('textarea');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      interceptor.pasteAnonymized(REPLACED);
+      await expect(interceptor.replaceInserted(REPLACED, REPLACED)).resolves.toBe(true);
+
+      input.value = '';
+      await expect(interceptor.replaceInserted(REPLACED, REPLACED)).resolves.toBe(false);
     });
   });
 });

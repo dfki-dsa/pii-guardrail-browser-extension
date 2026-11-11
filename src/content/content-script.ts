@@ -26,6 +26,11 @@ import {
 import { isInEditableRegion } from '../ui/shared/editable-region';
 import { ClipboardInterceptor } from './clipboard-interceptor';
 import { ReviewOverlay } from '../ui/overlay/overlay';
+import type { OverlayCallbacks } from '../ui/overlay/overlay-model';
+import {
+  AutoReplaceToast,
+  AUTO_REPLACE_UNDO_FAILED_MESSAGE,
+} from '../ui/auto-replace-toast/auto-replace-toast';
 import { ScanningIndicator } from '../ui/scanning-indicator/scanning-indicator';
 import { CancelDecisionDialog } from '../ui/cancel-decision-dialog/cancel-decision-dialog';
 import { CriticalLocalAiModal } from '../ui/critical-local-ai-modal/critical-local-ai-modal';
@@ -74,6 +79,7 @@ import {
 } from '../shared/feedback';
 import { prepareReviewSpans } from './review-spans';
 import { resolveThreshold } from '../shared/sensitivity-resolver';
+import { selectDefaultApproved } from '../shared/review-defaults';
 import { CONVERSATION_URL_POLL_MS, LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, RESPONSE_DEBOUNCE_MS, CHIP_FADE_MS } from '../shared/constants';
 import type { PiiSpan, FeedbackEntry, Settings, AllowlistEntry, CancelDetectionBehavior, NerStatus, NerStatusResponse, SystemCompatibilityStatus, SystemCompatibilityStatusResponse } from '../shared/message-types';
 
@@ -370,6 +376,8 @@ function watchConversationUrl(): void {
     const next = normalizeConversationUrl(window.location.href);
     if (next === conversationUrl) return;
     conversationUrl = next;
+    // The message box the notice refers to has been sent or left behind.
+    dismissAutoReplaceToast();
     void adoptConversation(next);
   };
 
@@ -743,99 +751,84 @@ function makePreviewResolverFactory(
   };
 }
 
-function showReviewOverlay(
-  originalText: string,
-  rawSpans: PiiSpan[],
-  timings?: { totalMs: number },
-): void {
-  const spans = prepareReviewSpans(originalText, rawSpans, settings, adaptiveThresholds);
-
-  if (spans.length === 0) {
-    // After filtering, nothing left — paste original
-    showIndicator('\u2713 No actionable personal data found', NO_PII_INDICATOR_MS);
-    interceptor.pasteOriginal(originalText);
-    return;
+/**
+ * Anonymise the approved spans, updating the entity map and — when it is on —
+ * the identity vault. Returns the text to put in the message box.
+ *
+ * Shared by the review pop-up and automatic replacement so the two cannot
+ * disagree about what a replacement is.
+ */
+function anonymizeApproved(originalText: string, approvedSpans: PiiSpan[]): string {
+  if (settings.identityVaultEnabled) {
+    // Vault path — looks up existing identities, creates new
+    // records for first-time PII, writes back to storage so
+    // subsequent pastes (in any provider, any session) see the
+    // same canonical replacements.
+    const result = anonymizeWithVault(
+      originalText,
+      approvedSpans,
+      identityVault,
+      settings.defaultReplacementMode,
+      entityMap,
+    );
+    entityMap = result.entityMap;
+    identityVault = result.vaultData;
+    // Persist vault asynchronously — paste should not block on it.
+    saveIdentityVault(identityVault).catch((err) =>
+      console.error('[PG:content] vault save failed', err),
+    );
+    return result.text;
   }
 
+  // Legacy path: per-conversation EntityMap only.
+  const result = anonymize(originalText, approvedSpans, entityMap);
+  entityMap = result.entityMap;
+  return result.text;
+}
+
+/**
+ * Record what this session put into the page, after `anonymizedText` went
+ * into the message box. The reveal banner, copy restore and conversation
+ * filing all read from what is recorded here.
+ */
+function recordReplacement(anonymizedText: string): void {
+  // The map may also hold entries restored from storage — on the shared
+  // "new chat" key those can belong to another tab's draft — and those are
+  // not ours to persist or file.
+  for (const [replacement] of entityMap.entries()) {
+    if (anonymizedText.includes(replacement)) {
+      sessionPlaceholders.add(replacement);
+    }
+  }
+
+  // The ledger just grew, so what may be resolved on this page grew
+  // with it — before anything has been written anywhere.
+  rebuildScope();
+  void recordEmittedTokens();
+}
+
+/** What the review pop-up decides about the paste itself. */
+type ReviewOutcomeCallbacks = Pick<
+  OverlayCallbacks,
+  'onConfirm' | 'onPasteOriginal' | 'onCancel'
+>;
+
+/**
+ * Open the review pop-up. Feedback, allowlisting and "edit details" behave
+ * the same however the pop-up was reached; only what happens to the paste
+ * differs, and that is the caller's.
+ */
+function openReviewOverlay(
+  originalText: string,
+  spans: PiiSpan[],
+  timings: { totalMs: number } | undefined,
+  outcome: ReviewOutcomeCallbacks,
+): void {
   const overlay = new ReviewOverlay(
     originalText,
     spans,
     {
-      onConfirm: (approvedSpans: PiiSpan[]) => {
-        if (approvedSpans.length === 0) {
-          interceptor.pasteOriginal(originalText);
-          return;
-        }
-
-        let anonymizedText: string;
-
-        if (settings.identityVaultEnabled) {
-          // Vault path — looks up existing identities, creates new
-          // records for first-time PII, writes back to storage so
-          // subsequent pastes (in any provider, any session) see the
-          // same canonical replacements.
-          const result = anonymizeWithVault(
-            originalText,
-            approvedSpans,
-            identityVault,
-            settings.defaultReplacementMode,
-            entityMap,
-          );
-          entityMap = result.entityMap;
-          anonymizedText = result.text;
-          identityVault = result.vaultData;
-          // Persist vault asynchronously — paste should not block on it.
-          saveIdentityVault(identityVault).catch((err) =>
-            console.error('[PG:content] vault save failed', err),
-          );
-        } else {
-          // Legacy path: per-conversation EntityMap only.
-          const result = anonymize(originalText, approvedSpans, entityMap);
-          entityMap = result.entityMap;
-          anonymizedText = result.text;
-        }
-
-        interceptor.pasteAnonymized(anonymizedText);
-
-        // Record what this session put into the page. The map may also hold
-        // entries restored from storage — on the shared "new chat" key those
-        // can belong to another tab's draft — and those are not ours to
-        // persist or file.
-        for (const [replacement] of entityMap.entries()) {
-          if (anonymizedText.includes(replacement)) {
-            sessionPlaceholders.add(replacement);
-          }
-        }
-
-        // The ledger just grew, so what may be resolved on this page grew
-        // with it — before anything has been written anywhere.
-        rebuildScope();
-        void recordEmittedTokens();
-
-        showIndicator(
-          `\u{1F512} ${approvedSpans.length} item(s) replaced`,
-          CHIP_FADE_MS,
-        );
-
-        if (settings.debug && timings) {
-          console.log(`[PG:content] Detection: ${timings.totalMs}ms, anonymized ${approvedSpans.length} spans`);
-        }
-      },
-
-      onPasteOriginal: () => {
-        interceptor.pasteOriginal(originalText);
-      },
-
-      onCancel: () => {
-        void chooseAfterExplicitScanCancel().then((decision) => {
-          if (decision === 'paste-original') {
-            interceptor.pasteOriginal(originalText);
-          }
-          if (settings.debug) {
-            console.log(`[PG:content] Overlay cancelled, ${decision === 'paste-original' ? 'original pasted' : 'nothing pasted'}`);
-          }
-        });
-      },
+      ...outcome,
 
       onFeedback: (entry: FeedbackEntry) => {
         logFeedback(entry);
@@ -853,7 +846,7 @@ function showReviewOverlay(
         const conflict = findConflictingPattern(text, settings.blocklist);
         if (conflict) {
           showIndicator(
-            `\u26A0 "${conflict}" is on the blocklist. Remove it there before allowlisting.`,
+            `⚠ "${conflict}" is on the blocklist. Remove it there before allowlisting.`,
             3000,
           );
           return;
@@ -884,6 +877,209 @@ function showReviewOverlay(
   );
 
   overlay.show();
+}
+
+/**
+ * A paste came back with detected items: review it, or — when the user has
+ * opted in — replace straight away.
+ */
+function handleDetectedPii(
+  originalText: string,
+  rawSpans: PiiSpan[],
+  timings?: { totalMs: number },
+): void {
+  const spans = prepareReviewSpans(originalText, rawSpans, settings, adaptiveThresholds);
+
+  if (spans.length === 0) {
+    // After filtering, nothing left — paste original
+    showIndicator('✓ No actionable personal data found', NO_PII_INDICATOR_MS);
+    interceptor.pasteOriginal(originalText);
+    return;
+  }
+
+  // Read at decision time, and compared against the one value that opts in:
+  // a settings object arriving through `storage.onChanged` is not normalised,
+  // so anything unexpected here has to mean "review".
+  if (settings?.pasteReviewMode === 'auto') {
+    replaceAutomatically(originalText, spans, timings);
+    return;
+  }
+
+  openReviewOverlay(originalText, spans, timings, {
+    onConfirm: (approvedSpans: PiiSpan[]) => {
+      if (approvedSpans.length === 0) {
+        interceptor.pasteOriginal(originalText);
+        return;
+      }
+
+      const anonymizedText = anonymizeApproved(originalText, approvedSpans);
+      interceptor.pasteAnonymized(anonymizedText);
+      recordReplacement(anonymizedText);
+
+      showIndicator(
+        `\u{1F512} ${approvedSpans.length} item(s) replaced`,
+        CHIP_FADE_MS,
+      );
+
+      if (settings.debug && timings) {
+        console.log(`[PG:content] Detection: ${timings.totalMs}ms, anonymized ${approvedSpans.length} spans`);
+      }
+    },
+
+    onPasteOriginal: () => {
+      interceptor.pasteOriginal(originalText);
+    },
+
+    onCancel: () => {
+      void chooseAfterExplicitScanCancel().then((decision) => {
+        if (decision === 'paste-original') {
+          interceptor.pasteOriginal(originalText);
+        }
+        if (settings.debug) {
+          console.log(`[PG:content] Overlay cancelled, ${decision === 'paste-original' ? 'original pasted' : 'nothing pasted'}`);
+        }
+      });
+    },
+  });
+}
+
+// --- Automatic replacement ---
+
+/** A paste that was replaced without review, kept so it can be undone or reviewed. */
+interface AutoReplacement {
+  originalText: string;
+  /** Every span the pop-up would have listed, not only the ones replaced. */
+  spans: PiiSpan[];
+  /** The text that went into the message box. */
+  inserted: string;
+  timings?: { totalMs: number };
+}
+
+let autoReplaceToast: AutoReplaceToast | null = null;
+
+function dismissAutoReplaceToast(): void {
+  autoReplaceToast?.dispose();
+  autoReplaceToast = null;
+}
+
+/** The notice belongs to automatic replacement; it goes when that is switched off. */
+function dismissAutoReplaceToastIfModeLeft(): void {
+  if (!settings?.enabled || settings.pasteReviewMode !== 'auto') {
+    dismissAutoReplaceToast();
+  }
+}
+
+const SWAP_FAILED_INDICATOR_MS = 5000;
+
+/**
+ * Replace what the review pop-up would have pre-selected, without showing it,
+ * then offer Undo and Review from a short-lived notice.
+ */
+function replaceAutomatically(
+  originalText: string,
+  spans: PiiSpan[],
+  timings?: { totalMs: number },
+): void {
+  const approved = selectDefaultApproved(
+    spans,
+    (span) => resolveThreshold(settings, span.entity_type),
+  );
+
+  if (approved.length === 0) {
+    // Everything left is something the pop-up would have shown unticked —
+    // inside a code block the user asked to skip, or below its threshold.
+    showIndicator(
+      `✓ Pasted — ${spans.length} detected item(s) left unchanged`,
+      NO_PII_INDICATOR_MS,
+    );
+    interceptor.pasteOriginal(originalText);
+    return;
+  }
+
+  const anonymizedText = anonymizeApproved(originalText, approved);
+  const landed = interceptor.pasteAnonymized(anonymizedText);
+  recordReplacement(anonymizedText);
+
+  if (settings.debug && timings) {
+    console.log(`[PG:content] Detection: ${timings.totalMs}ms, auto-anonymized ${approved.length} spans`);
+  }
+
+  // No message box to land in: already reported through the composer lookup,
+  // and there is nothing on the page to undo or review.
+  if (!landed) return;
+
+  showAutoReplaceToast(
+    { originalText, spans, inserted: anonymizedText, timings },
+    approved.length,
+  );
+}
+
+function showAutoReplaceToast(replacement: AutoReplacement, count: number): void {
+  dismissAutoReplaceToast();
+  const toast = new AutoReplaceToast(settings.theme, count, {
+    onUndo: () => interceptor.replaceInserted(replacement.inserted, replacement.originalText),
+    onReview: () => reviewAutoReplacement(replacement),
+    onDispose: () => {
+      if (autoReplaceToast === toast) autoReplaceToast = null;
+    },
+  });
+  autoReplaceToast = toast;
+  toast.show();
+}
+
+/**
+ * Open the review pop-up for a paste that was already replaced.
+ *
+ * The replaced text stays in the message box while the pop-up is open and is
+ * swapped only for what the user confirms. If it cannot be swapped — edited or
+ * sent in the meantime — nothing changes and the user is told; closing the
+ * pop-up keeps the automatic replacement.
+ */
+function reviewAutoReplacement(replacement: AutoReplacement): void {
+  const { originalText, inserted } = replacement;
+
+  const restoreOriginal = async (): Promise<void> => {
+    const restored = await interceptor.replaceInserted(inserted, originalText);
+    if (restored) {
+      showIndicator('Original restored — nothing is replaced', NO_PII_INDICATOR_MS);
+    } else {
+      showIndicator(`⚠ ${AUTO_REPLACE_UNDO_FAILED_MESSAGE}`, SWAP_FAILED_INDICATOR_MS);
+    }
+  };
+
+  openReviewOverlay(originalText, replacement.spans, replacement.timings, {
+    onConfirm: (approvedSpans: PiiSpan[]) => {
+      if (approvedSpans.length === 0) {
+        void restoreOriginal();
+        return;
+      }
+
+      const anonymizedText = anonymizeApproved(originalText, approvedSpans);
+      void interceptor.replaceInserted(inserted, anonymizedText).then((swapped) => {
+        if (!swapped) {
+          showIndicator(
+            "⚠ Couldn't update the message — it was edited or sent. Nothing was changed.",
+            SWAP_FAILED_INDICATOR_MS,
+          );
+          return;
+        }
+        recordReplacement(anonymizedText);
+        showIndicator(
+          `\u{1F512} ${approvedSpans.length} item(s) replaced`,
+          CHIP_FADE_MS,
+        );
+      });
+    },
+
+    onPasteOriginal: () => {
+      void restoreOriginal();
+    },
+
+    onCancel: () => {
+      // Nothing was held back for this pop-up, so there is nothing to decide:
+      // the automatic replacement stays as it is.
+    },
+  });
 }
 
 // --- Paste interceptor ---
@@ -921,6 +1117,9 @@ async function chooseAfterExplicitScanCancel(): Promise<'paste-original' | 'drop
 
 const interceptor = new PasteInterceptor(adapter, {
   onAnalyzing: () => {
+    // A new paste supersedes the last one: its Undo would now be ambiguous
+    // about which text it means.
+    dismissAutoReplaceToast();
     scanningIndicator?.stop();
     scanningIndicator = new ScanningIndicator(settings.theme, () => {
       interceptor.cancelActiveDetection();
@@ -938,7 +1137,7 @@ const interceptor = new PasteInterceptor(adapter, {
   onPiiDetected: (text, spans, timings) => {
     scanningIndicator?.stop();
     scanningIndicator = null;
-    showReviewOverlay(text, spans, timings);
+    handleDetectedPii(text, spans, timings);
   },
 
   onError: (error) => {
@@ -1012,6 +1211,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse): undefined
     const vaultToggled = settings?.identityVaultEnabled !== message.payload.identityVaultEnabled;
     settings = message.payload;
     interceptor.setEnabled(settings.enabled);
+    dismissAutoReplaceToastIfModeLeft();
     if (vaultToggled) void reloadVaultAndScope();
     clipboardInterceptor.setTheme(settings.theme);
     clipboardInterceptor.setEnabled(
@@ -1088,6 +1288,7 @@ async function init(): Promise<void> {
           const vaultToggled = settings?.identityVaultEnabled !== next.identityVaultEnabled;
           settings = next;
           interceptor.setEnabled(settings.enabled);
+          dismissAutoReplaceToastIfModeLeft();
           if (vaultToggled) void reloadVaultAndScope();
           clipboardInterceptor.setTheme(settings.theme);
           clipboardInterceptor.setEnabled(

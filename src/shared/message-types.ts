@@ -325,6 +325,14 @@ export type ReplacementModeSetting = 'placeholder' | 'synthetic';
 export type ThemeSetting = 'dark' | 'light';
 
 export type CancelDetectionBehavior = 'ask' | 'paste-original' | 'drop';
+
+/**
+ * What happens when a paste contains detected personal data.
+ *  - `review`: open the review pop-up and wait for the user (default).
+ *  - `auto`: replace what the pop-up would have pre-selected straight away,
+ *    then offer Undo / Review from a short-lived notice.
+ */
+export type PasteReviewMode = 'review' | 'auto';
 export type LocalAiUnloadTimeoutMs = 60_000 | 300_000 | 600_000 | 1_800_000 | null;
 
 export interface Settings {
@@ -359,6 +367,8 @@ export interface Settings {
   skipCodeBlocks: boolean;
   /** What to do after the user explicitly cancels a running paste scan. */
   cancelDetectionBehavior: CancelDetectionBehavior;
+  /** Whether detected items are reviewed in the pop-up or replaced automatically on paste. */
+  pasteReviewMode: PasteReviewMode;
   /** How long the Local AI runtime may remain loaded after relevant activity. Null keeps it for the browser session. */
   localAiUnloadTimeoutMs: LocalAiUnloadTimeoutMs;
   /** Keep an already-loaded Local AI runtime resident while the user is active on a foreground supported page. */

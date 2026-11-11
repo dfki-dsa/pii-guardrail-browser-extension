@@ -1,5 +1,6 @@
 import type { SiteAdapter } from './site-adapters/adapter-interface';
-import { isTextFormControl } from './site-adapters/adapter-interface';
+import { isTextFormControl, replaceTextCompat } from './site-adapters/adapter-interface';
+import { readComposerText, stripIgnorable } from './composer-text-range';
 import type {
   CancelDetectionRequest,
   ComposerMatchState,
@@ -26,6 +27,18 @@ function isExtensionReloadError(message: string): boolean {
     normalized.includes('context invalidated') ||
     normalized.includes('receiving end does not exist')
   );
+}
+
+/**
+ * How long a site's editor gets to react to a swap before the composer is
+ * read back. Rich editors reconcile the DOM with their own state on a
+ * microtask or the next frame; this is comfortably past both, and short
+ * enough that the user never sees a pause.
+ */
+const EDITOR_SETTLE_MS = 60;
+
+function editorSettled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, EDITOR_SETTLE_MS));
 }
 
 export type CanceledPasteDecision = 'paste-original' | 'drop';
@@ -92,6 +105,11 @@ export class PasteInterceptor {
   private activeRequestId: string | null = null;
   private canceledRequestIds = new Set<string>();
   private savedSelection: SavedSelection | null = null;
+  /**
+   * Where the last insert went, so `replaceInserted` addresses the same
+   * message box. `start` is the caret a form control's text went in at.
+   */
+  private lastInsert: { inputElement: HTMLElement; start?: number } | null = null;
   private activePasteText: string | null = null;
   private waitForReady: () => Promise<void>;
 
@@ -345,9 +363,52 @@ export class PasteInterceptor {
     this.insertIntoComposer(text);
   }
 
-  /** Insert anonymized text into input. */
-  pasteAnonymized(text: string): void {
-    this.insertIntoComposer(text);
+  /**
+   * Insert anonymized text into input. False when there was no message box
+   * for it to land in (already reported through `onComposerLookup`).
+   */
+  pasteAnonymized(text: string): boolean {
+    return this.insertIntoComposer(text);
+  }
+
+  /**
+   * Swap the text of the last insert for `newText` — the step behind Undo
+   * and Review after an automatic replacement.
+   *
+   * Resolves false unless the swap demonstrably took. When `oldText` is not
+   * found exactly once nothing is touched at all. When it is, the swap runs and
+   * afterwards the composer is read back to confirm it now holds `newText`
+   * and no longer holds `oldText`. The read-back is what stands between this
+   * and an editor that redraws from its own state and quietly drops the
+   * change — which would otherwise be reported as done.
+   */
+  async replaceInserted(oldText: string, newText: string): Promise<boolean> {
+    const target = this.lastInsert;
+    if (!target || !target.inputElement.isConnected) return false;
+
+    const oldCore = stripIgnorable(oldText);
+    const newCore = stripIgnorable(newText);
+    if (!oldCore || !newCore) return false;
+
+    if (oldCore === newCore) {
+      // Nothing to change; true only if the text is in fact still there.
+      return readComposerText(target.inputElement).includes(oldCore);
+    }
+
+    if (!replaceTextCompat(target.inputElement, oldText, newText, target.start)) {
+      return false;
+    }
+
+    await editorSettled();
+
+    const now = readComposerText(target.inputElement);
+    if (!now.includes(newCore)) return false;
+    // `oldCore` may legitimately survive as part of `newCore` (restoring an
+    // original that happens to contain the replaced text). Otherwise its
+    // presence means the editor kept the old text alongside or instead.
+    if (now.includes(oldCore) && !newCore.includes(oldCore)) return false;
+
+    return true;
   }
 
   /**
@@ -362,18 +423,24 @@ export class PasteInterceptor {
    * The adapter is consulted only when there is no saved selection, which is
    * an insert with no paste behind it.
    */
-  private insertIntoComposer(text: string): void {
+  private insertIntoComposer(text: string): boolean {
     const input = this.savedSelection?.inputElement ?? this.adapter.getInputElement();
     if (!input) {
       // The review ran and its result has nowhere to land. That used to be a
       // bare `if (input)` with no else, which is the same silence this signal
       // exists to end.
       this.callbacks.onComposerLookup?.('none');
-      return;
+      this.lastInsert = null;
+      return false;
     }
+
+    const start =
+      this.savedSelection?.kind === 'formControl' ? this.savedSelection.start : undefined;
 
     this.restoreSelection();
     this.adapter.insertText(input, text);
+    this.lastInsert = { inputElement: input, start };
+    return true;
   }
 }
 

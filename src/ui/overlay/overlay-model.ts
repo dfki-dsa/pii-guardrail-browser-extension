@@ -10,6 +10,7 @@
 
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import type { EntityType, FeedbackEntry, PiiSpan } from '../../shared/message-types';
+import { isApprovedByDefault } from '../../shared/review-defaults';
 import {
   byteOffsetToStringIndex,
   stringIndexToByteOffset,
@@ -93,9 +94,10 @@ export class OverlayModel {
     this.spanStates = writable(
       spans.map((s) => ({
         span: s,
-        enabled:
-          !s.inCodeBlock &&
-          s.score >= (this.thresholdFn ? this.thresholdFn(s) : initialThreshold),
+        enabled: isApprovedByDefault(
+          s,
+          this.thresholdFn ? this.thresholdFn(s) : initialThreshold,
+        ),
         entityType: s.entity_type,
         manualOverride: false,
         whitelisted: false,
@@ -270,8 +272,7 @@ export class OverlayModel {
           ? s
           : {
               ...s,
-              enabled:
-                !s.span.inCodeBlock && s.span.score >= this.thresholdFor(s.span),
+              enabled: isApprovedByDefault(s.span, this.thresholdFor(s.span)),
             },
       ),
     );

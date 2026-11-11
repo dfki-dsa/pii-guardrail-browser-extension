@@ -140,6 +140,50 @@ describe('createAppModels — page protection state', () => {
   });
 });
 
+describe('createAppModels — automatic replacement', () => {
+  test('is off until the user turns it on', async () => {
+    await setupHarness({ systemStatus: okStatus() });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    expect(get(app.settings.autoReplace)).toBe(false);
+  });
+
+  test('reflects a profile that already opted in', async () => {
+    await setupHarness({ systemStatus: okStatus(), settings: { pasteReviewMode: 'auto' } });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    expect(get(app.settings.autoReplace)).toBe(true);
+  });
+
+  test('saves the mode and tells open pages, in both directions', async () => {
+    const h = await setupHarness({ systemStatus: okStatus(), pageProtection: { composerMatch: 'adapter' } });
+    const { createAppModels } = jest.requireActual<typeof import('../../src/popup/popup-model.svelte')>('../../src/popup/popup-model.svelte.ts');
+    const app = createAppModels();
+    await flushInit();
+
+    await app.settings.setAutoReplace(true);
+
+    expect((h.store[SETTINGS_KEY] as Settings).pasteReviewMode).toBe('auto');
+    expect(get(app.settings.autoReplace)).toBe(true);
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        type: 'SETTINGS_UPDATED',
+        payload: expect.objectContaining({ pasteReviewMode: 'auto' }),
+      }),
+    );
+
+    await app.settings.setAutoReplace(false);
+
+    expect((h.store[SETTINGS_KEY] as Settings).pasteReviewMode).toBe('review');
+    expect(get(app.settings.autoReplace)).toBe(false);
+  });
+});
+
 describe('createAppModels — resource-safe popup', () => {
   test('opens public support and legal links in new tabs', async () => {
     await setupHarness({ systemStatus: okStatus() });

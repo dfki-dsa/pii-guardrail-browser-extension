@@ -4,6 +4,10 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
+## [Unreleased]
+
+- New optional **Auto-replace** setting in the popup (Settings → Behavior), off by default. With it on, personal data detected in a paste is replaced straight away instead of stopping at the review pop-up. What gets replaced is exactly what the review would have pre-selected. A notice then appears for a few seconds with **Undo**, which puts your original text back, and **Review**, which opens the review for that paste and applies what you confirm. Ignoring the notice keeps the replacement. If the replaced text has been edited or sent by the time you click, nothing is changed and the notice says so. Detection can still miss things, so read the message before sending it.
+
 ## [0.5.0] - Public Beta
 
 - Privacy Guardrail now recognizes a chat by what is on the page instead of by its web address. It used to carry a list of what a conversation's address looks like on each site, and a site quietly changing that shape was enough to lose your replacements — which happened twice in two releases. A replacement is now filed under a conversation when it is actually seen in that conversation's messages, so a site renaming a chat, redesigning its pages, or serving you a different layout no longer costs you anything. This also works on chat sites the extension has no specific knowledge of.

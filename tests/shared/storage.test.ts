@@ -15,6 +15,7 @@ describe('settings storage', () => {
         nerModel: 'bardsai',
         clipboardInterceptEnabled: true,
         cancelDetectionBehavior: 'ask',
+        pasteReviewMode: 'review',
         localAiUnloadTimeoutMs: 600000,
         keepLocalAiLoadedWhileActive: true,
         autoWarmLocalAiOnActiveSupportedPage: true,
@@ -139,6 +140,38 @@ describe('settings storage', () => {
 
     expect(chrome.storage.local.set).toHaveBeenCalledWith({
       pg_settings: expect.objectContaining({ cancelDetectionBehavior: 'paste-original' }),
+    });
+  });
+
+  test('normalizes missing and invalid paste review mode to review', async () => {
+    // Anything but an explicit opt-in has to mean the pop-up is shown: a
+    // profile from before the setting existed, or a value nobody defined.
+    const { pasteReviewMode: _omitted, ...storedBeforeFlag } = DEFAULT_SETTINGS;
+    (chrome.storage.local.get as jest.Mock)
+      .mockResolvedValueOnce({ pg_settings: storedBeforeFlag })
+      .mockResolvedValueOnce({ pg_settings: { ...DEFAULT_SETTINGS, pasteReviewMode: 'always' } })
+      .mockResolvedValueOnce({ pg_settings: { ...DEFAULT_SETTINGS, pasteReviewMode: true } });
+
+    await expect(loadSettings()).resolves.toEqual(
+      expect.objectContaining({ pasteReviewMode: 'review' })
+    );
+    await expect(loadSettings()).resolves.toEqual(
+      expect.objectContaining({ pasteReviewMode: 'review' })
+    );
+    await expect(loadSettings()).resolves.toEqual(
+      expect.objectContaining({ pasteReviewMode: 'review' })
+    );
+  });
+
+  test('persists automatic replacement once the user opts in', async () => {
+    (chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
+      pg_settings: DEFAULT_SETTINGS,
+    });
+
+    await saveSettings({ pasteReviewMode: 'auto' });
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      pg_settings: expect.objectContaining({ pasteReviewMode: 'auto' }),
     });
   });
 

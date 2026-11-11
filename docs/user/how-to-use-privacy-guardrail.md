@@ -20,6 +20,23 @@ Supported beta sites:
 
 When no supported span is found, the extension allows the paste without showing the full review overlay.
 
+## Auto-replace
+
+If you paste often and do not want to confirm each time, turn on **Auto-replace** in the extension popup under **Settings → Behavior**. It is off by default.
+
+With Auto-replace on:
+
+1. Paste into a supported chat input as usual.
+2. Detected items are replaced straight away, with no review overlay. The items replaced are the ones the review would have pre-selected, so text inside code blocks you chose to skip is left alone.
+3. A notice appears for a few seconds with two buttons:
+   - **Undo** puts your original text back. Nothing is replaced.
+   - **Review** opens the review overlay for that paste. What you confirm there replaces the text in the message box. Closing the overlay keeps the automatic replacement.
+4. If you ignore the notice, the replacement stays.
+
+Undo and Review only work while the replaced text is still in the message box as it was inserted. If you have edited or sent it, the notice tells you that nothing was changed.
+
+Auto-replace acts on pasted text only, and detection can miss things or replace something harmless. Read the message before you send it.
+
 ## Placeholders
 
 Accepted spans are replaced with typed placeholders such as:

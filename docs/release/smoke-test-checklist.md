@@ -54,6 +54,24 @@ Run the steps below on:
 16. Open the page console and extension service worker console.
 17. Confirm there are no new extension errors during paste, review, insertion, submission, or restoration.
 
+## Auto-replace Checks For Each Site
+
+Undo and Review change text that is already inside the site's own editor. Automated tests cover
+this in a plain browser editor only, so each site has to be checked by hand, and what matters is
+what the site **received**, not only what the message box shows.
+
+1. Turn on **Auto-replace** in the popup (Settings → Behavior). Do not reload the page.
+2. Paste the synthetic test text. Confirm no review overlay opens, placeholders are inserted, and the notice with **Review** and **Undo** appears.
+3. Ignore the notice until it fades. Confirm the replacement stays. Submit and confirm restoration still works on the response.
+4. Paste again and click **Undo**. Confirm the original text is back. Submit and confirm the site received the original text.
+5. Paste a multi-paragraph sample and click **Undo**. Confirm all of it is restored once, with nothing duplicated or left behind.
+6. Paste again, click **Review**, untick one item and confirm. Check the message box, then submit and confirm the site received that item unreplaced and the others replaced.
+7. Paste again, click **Review**, mark an extra word as personal data and confirm. Submit and confirm the site received that word replaced.
+8. Paste again, edit the inserted text by hand, then click **Undo**. Confirm the notice reports that nothing was changed and the text is untouched.
+9. Turn **Auto-replace** off. Confirm the next paste opens the review overlay again.
+
+If step 4, 6 or 7 fails on a site, record it as a release blocker for Auto-replace on that site.
+
 ## Degraded And Failure Checks
 
 Run at least one validation pass with Local AI unavailable or disabled, if the build supports that state:
