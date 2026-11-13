@@ -104,39 +104,41 @@
       {/if}
     </div>
 
-    <div class="pg-auto-mode-row">
-      <button
-        type="button"
-        role="switch"
-        id="pg-auto-mode-toggle"
-        class="pg-switch"
-        class:pg-switch-on={$autoMode}
-        aria-checked={$autoMode}
-        aria-labelledby="pg-auto-mode-label"
-        aria-describedby="pg-auto-mode-tip"
-        onclick={() => model.setAutoMode(!$autoMode)}
-      ><span class="pg-switch-knob"></span></button>
-      <span class="pg-auto-mode-title" id="pg-auto-mode-label">Auto-mode</span>
-      <AutoModeInfo tipId="pg-auto-mode-tip" buttonId="pg-auto-mode-info" placement="above" />
-    </div>
-
     <footer class="pg-footer">
-      <button
-        type="button"
-        class="pg-btn pg-btn-secondary"
-        id="pg-paste-original-btn"
-        onclick={() => model.pasteOriginal()}
-      >
-        {@html undoIcon('pg-btn-icon')}
-        <span>Restore original</span>
-      </button>
-      <button
-        type="button"
-        class="pg-btn pg-btn-primary"
-        id="pg-confirm-btn"
-        title="Enter"
-        onclick={() => model.primary()}
-      >Replace and paste</button>
+      <div class="pg-auto-mode">
+        <button
+          type="button"
+          role="switch"
+          id="pg-auto-mode-toggle"
+          class="pg-switch"
+          class:pg-switch-on={$autoMode}
+          aria-checked={$autoMode}
+          aria-labelledby="pg-auto-mode-label"
+          aria-describedby="pg-auto-mode-tip"
+          onclick={() => model.setAutoMode(!$autoMode)}
+        ><span class="pg-switch-knob"></span></button>
+        <span class="pg-auto-mode-title" id="pg-auto-mode-label">Auto-mode</span>
+        <AutoModeInfo tipId="pg-auto-mode-tip" buttonId="pg-auto-mode-info" placement="above" />
+      </div>
+
+      <div class="pg-footer-actions">
+        <button
+          type="button"
+          class="pg-btn pg-btn-secondary"
+          id="pg-paste-original-btn"
+          onclick={() => model.pasteOriginal()}
+        >
+          {@html undoIcon('pg-btn-icon')}
+          <span>Restore original</span>
+        </button>
+        <button
+          type="button"
+          class="pg-btn pg-btn-primary"
+          id="pg-confirm-btn"
+          title="Enter"
+          onclick={() => model.primary()}
+        >Replace and paste</button>
+      </div>
     </footer>
 
     <p class="pg-disclaimer">{REVIEW_POPUP_DISCLAIMER}</p>

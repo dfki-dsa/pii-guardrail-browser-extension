@@ -643,17 +643,14 @@ details[open] > .pg-code-disclosure-summary::before {
   text-align: center;
 }
 
-/* "Auto-mode" — a standing preference, set apart from the two
-   buttons that decide about this one paste. */
-.pg-auto-mode-row {
-  flex-shrink: 0;
+/* "Auto-mode" — a standing preference. It shares the footer with the two
+   buttons that decide about this one paste, and is kept at the other end of
+   it so the three do not read as one set of choices. */
+.pg-auto-mode {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 20px;
-  background: var(--color-surface);
-  border-top: var(--border-hairline);
 }
 .pg-auto-mode-title {
   font-size: 13px;
@@ -663,7 +660,7 @@ details[open] > .pg-code-disclosure-summary::before {
 
 /* The info tag itself is styled in shared/styles/info-tag.css. Here it is
    only pulled a little closer to the label it explains. */
-.pg-auto-mode-row .pg-info {
+.pg-auto-mode .pg-info {
   margin-left: -6px;
 }
 
@@ -710,12 +707,22 @@ details[open] > .pg-code-disclosure-summary::before {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  /* Too narrow for one line: the switch goes above the buttons. */
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 10px 16px;
   padding: 14px 20px;
   background: var(--color-card);
   border-top: var(--border-hairline);
+}
+.pg-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  /* Stays at the right edge when it has a line to itself. */
+  margin-left: auto;
 }
 
 .pg-btn {
