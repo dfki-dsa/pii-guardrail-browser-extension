@@ -10,6 +10,7 @@
 
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import type { EntityType, FeedbackEntry, PiiSpan } from '../../shared/message-types';
+import { isApprovedByDefault } from '../../shared/review-defaults';
 import {
   byteOffsetToStringIndex,
   stringIndexToByteOffset,
@@ -22,6 +23,25 @@ export interface OverlayCallbacks {
   onFeedback: (entry: FeedbackEntry) => void;
   onAddToAllowlist: (text: string) => void;
   onEditDetails: (text: string) => void;
+  /**
+   * The user flipped "Auto-mode". Applied at once, like
+   * any switch: it is a standing preference, not part of this paste.
+   */
+  onSetAutoMode?: (enabled: boolean) => void;
+}
+
+/**
+ * What the pop-up was opened for.
+ *  - `paste`: a paste is being held; nothing is in the message box yet.
+ *  - `replaced`: the paste was already replaced automatically, and the user
+ *    asked to review it afterwards.
+ */
+export type OverlayContext = 'paste' | 'replaced';
+
+export interface OverlayOptions {
+  context?: OverlayContext;
+  /** Whether automatic replacement is on as the pop-up opens. */
+  autoMode?: boolean;
 }
 
 export interface SpanState {
@@ -68,6 +88,11 @@ export class OverlayModel {
   previewText: Readable<string>;
   mainIndices: Readable<number[]>;
   codeBlockIndices: Readable<number[]>;
+  /** State of the "Auto-mode" switch. */
+  autoMode: Writable<boolean>;
+  /** Which items were selected when the pop-up opened. */
+  private readonly initialEnabled: boolean[];
+  readonly context: OverlayContext;
 
   private readonly previewResolverFactory: PreviewResolverFactory | null;
 
@@ -78,7 +103,10 @@ export class OverlayModel {
     confidenceThreshold: number | ThresholdResolver,
     timings?: { totalMs: number },
     previewResolverFactory?: PreviewResolverFactory,
+    options: OverlayOptions = {},
   ) {
+    this.context = options.context ?? 'paste';
+    this.autoMode = writable(options.autoMode ?? false);
     this.previewResolverFactory = previewResolverFactory ?? null;
     this.originalText = originalText;
     this.callbacks = callbacks;
@@ -93,15 +121,17 @@ export class OverlayModel {
     this.spanStates = writable(
       spans.map((s) => ({
         span: s,
-        enabled:
-          !s.inCodeBlock &&
-          s.score >= (this.thresholdFn ? this.thresholdFn(s) : initialThreshold),
+        enabled: isApprovedByDefault(
+          s,
+          this.thresholdFn ? this.thresholdFn(s) : initialThreshold,
+        ),
         entityType: s.entity_type,
         manualOverride: false,
         whitelisted: false,
       })),
     );
     this.manualSpans = writable<PiiSpan[]>([]);
+    this.initialEnabled = get(this.spanStates).map((s) => s.enabled);
     this.confidenceThreshold = writable(initialThreshold);
     this.selectedSnippet = writable<string | null>(null);
     this.dismissMenu = writable<DismissMenuState | null>(null);
@@ -270,8 +300,7 @@ export class OverlayModel {
           ? s
           : {
               ...s,
-              enabled:
-                !s.span.inCodeBlock && s.span.score >= this.thresholdFor(s.span),
+              enabled: isApprovedByDefault(s.span, this.thresholdFor(s.span)),
             },
       ),
     );
@@ -288,6 +317,41 @@ export class OverlayModel {
     const all = [...approved, ...manuals];
     this.callbacks.onConfirm(all);
     return all;
+  }
+
+  /**
+   * The main button, and Enter.
+   *
+   * Labelled "Replace and paste" in both contexts. For a held paste that is
+   * exactly what it does. For a paste that was already replaced it depends on
+   * whether the user changed anything: with nothing changed there is nothing
+   * to apply, and the replacement already in the message box is simply kept.
+   */
+  primary(): void {
+    if (this.context === 'replaced' && !this.hasChanges()) {
+      this.cancel();
+      return;
+    }
+    this.confirm();
+  }
+
+  /**
+   * Whether the selection differs from what the pop-up opened with: an item
+   * ticked or unticked, a type changed, or something marked by hand.
+   */
+  hasChanges(): boolean {
+    return (
+      get(this.manualSpans).length > 0 ||
+      get(this.spanStates).some(
+        (s, i) => s.enabled !== this.initialEnabled[i] || s.entityType !== s.span.entity_type,
+      )
+    );
+  }
+
+  setAutoMode(enabled: boolean): void {
+    if (this.destroyed || get(this.autoMode) === enabled) return;
+    this.autoMode.set(enabled);
+    this.callbacks.onSetAutoMode?.(enabled);
   }
 
   pasteOriginal(): void {

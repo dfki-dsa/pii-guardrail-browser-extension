@@ -5,6 +5,7 @@
  */
 
 import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
+import { centerOverAnchor } from '../shared/anchored-position';
 
 const SCANNING_INDICATOR_STYLES = `
   ${SHADOW_DESIGN_SYSTEM_STYLES}
@@ -103,15 +104,22 @@ export class ScanningIndicator {
   private cancelInvoked = false;
   private readonly theme: 'dark' | 'light';
   private readonly onCancel?: () => void;
+  /** The message box being pasted into; the indicator lines up with it. */
+  private readonly anchor: HTMLElement | null;
   private readonly keydownHandler = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || !this.mounted) return;
     event.preventDefault();
     this.invokeCancel();
   };
 
-  constructor(theme: 'dark' | 'light' = 'dark', onCancel?: () => void) {
+  constructor(
+    theme: 'dark' | 'light' = 'dark',
+    onCancel?: () => void,
+    anchor: HTMLElement | null = null,
+  ) {
     this.theme = theme;
     this.onCancel = onCancel;
+    this.anchor = anchor;
     this.host = document.createElement('div');
     this.host.id = 'pg-scanning-indicator-host';
     this.shadow = this.host.attachShadow({ mode: 'closed' });
@@ -128,6 +136,7 @@ export class ScanningIndicator {
     this.hideCounter();
     document.body.appendChild(this.host);
     this.mounted = true;
+    centerOverAnchor(this.indicatorEl, this.anchor);
     this.cancelInvoked = false;
     this.startTimeMs = Date.now();
     document.addEventListener('keydown', this.keydownHandler, true);

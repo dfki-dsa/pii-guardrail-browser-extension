@@ -1,0 +1,78 @@
+/*
+ * Privacy Guardrail — info tag
+ *
+ * The small "i" with a tooltip, as rendered by src/ui/shared/AutoModeInfo.svelte.
+ * Loaded by the extension popup (popup.ts) and by the review pop-up's
+ * stylesheet, so the two cannot drift apart. Uses the shared design tokens.
+ */
+
+.pg-info {
+  position: relative;
+  display: inline-flex;
+}
+
+.pg-info-btn {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgb(14 23 38 / 26%);
+  border-radius: 50%;
+  background: var(--color-card);
+  color: var(--color-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+}
+
+.pg-info-btn:hover,
+.pg-info-btn:focus-visible {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  outline: none;
+}
+
+.pg-info-tip {
+  position: absolute;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 300px;
+  max-width: 70vw;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-header);
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 24%);
+}
+
+.pg-info-tip strong {
+  font-weight: 600;
+}
+
+.pg-info:hover .pg-info-tip,
+.pg-info:focus-within .pg-info-tip {
+  display: flex;
+}
+
+/* Opens upward: for a tag near the bottom of its surface. */
+.pg-info--above .pg-info-tip {
+  bottom: calc(100% + 8px);
+  left: -10px;
+  width: 320px;
+}
+
+/* Opens downward, pulled left so it stays inside a narrow surface. */
+.pg-info--below .pg-info-tip {
+  top: calc(100% + 8px);
+  left: -88px;
+}

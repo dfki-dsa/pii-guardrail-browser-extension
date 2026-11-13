@@ -1,5 +1,6 @@
 import { mount } from 'svelte';
 import '../shared/styles/tokens.css';
+import '../shared/styles/info-tag.css';
 import App from './App.svelte';
 
 const target = document.getElementById('app');

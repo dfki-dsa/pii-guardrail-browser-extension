@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { EntityType } from '../../shared/message-types';
-  import { LIMITS_DISCLAIMER } from '../../shared/project-links';
+  import { REVIEW_POPUP_DISCLAIMER } from '../../shared/project-links';
+  import AutoModeInfo from '../shared/AutoModeInfo.svelte';
+  import { undoIcon } from '../shared/icons';
   import type { OverlayModel } from './overlay-model';
   import OverlayHeader from './components/OverlayHeader.svelte';
   import TextTabs from './components/TextTabs.svelte';
@@ -17,7 +19,13 @@
   // Model is created once and passed in as a stable reference for the
   // overlay's lifetime, so destructuring its store fields is safe.
   // svelte-ignore state_referenced_locally
-  const { totalCount, enabledCount, highlightedHtml, previewText, confidenceThreshold, selectedSnippet, dismissMenu, spanStates } = model;
+  const { totalCount, enabledCount, highlightedHtml, previewText, confidenceThreshold, selectedSnippet, dismissMenu, spanStates, autoMode } = model;
+
+  // Opened to look back at a paste that was already replaced automatically,
+  // rather than to decide about one still being held. The pop-up looks the
+  // same either way; only what closing it means differs.
+  // svelte-ignore state_referenced_locally
+  const replaced = model.context === 'replaced';
 
   function toggleSpanByIndex(index: number) {
     const current = $spanStates[index];
@@ -62,6 +70,7 @@
     <OverlayHeader
       totalCount={$totalCount}
       timingMs={model.timings?.totalMs}
+      {replaced}
       onClose={() => model.cancel()}
     />
 
@@ -95,28 +104,44 @@
       {/if}
     </div>
 
-    <p class="pg-disclaimer">{LIMITS_DISCLAIMER}</p>
-
     <footer class="pg-footer">
-      <div class="pg-footer-left">
+      <div class="pg-auto-mode">
         <button
           type="button"
-          class="pg-btn-link"
-          title="Esc"
-          onclick={() => model.pasteOriginal()}
-        >Paste original</button>
+          role="switch"
+          id="pg-auto-mode-toggle"
+          class="pg-switch"
+          class:pg-switch-on={$autoMode}
+          aria-checked={$autoMode}
+          aria-labelledby="pg-auto-mode-label"
+          aria-describedby="pg-auto-mode-tip"
+          onclick={() => model.setAutoMode(!$autoMode)}
+        ><span class="pg-switch-knob"></span></button>
+        <span class="pg-auto-mode-title" id="pg-auto-mode-label">Auto-mode</span>
+        <AutoModeInfo tipId="pg-auto-mode-tip" buttonId="pg-auto-mode-info" placement="above" />
       </div>
-      <div class="pg-footer-right">
-        <span class="pg-footer-summary">Replacing {$enabledCount} of {$totalCount} items</span>
+
+      <div class="pg-footer-actions">
+        <button
+          type="button"
+          class="pg-btn pg-btn-secondary"
+          id="pg-paste-original-btn"
+          onclick={() => model.pasteOriginal()}
+        >
+          {@html undoIcon('pg-btn-icon')}
+          <span>Restore original</span>
+        </button>
         <button
           type="button"
           class="pg-btn pg-btn-primary"
           id="pg-confirm-btn"
           title="Enter"
-          onclick={() => model.confirm()}
-        >Replace &amp; paste</button>
+          onclick={() => model.primary()}
+        >Replace and paste</button>
       </div>
     </footer>
+
+    <p class="pg-disclaimer">{REVIEW_POPUP_DISCLAIMER}</p>
 
   </div>
 

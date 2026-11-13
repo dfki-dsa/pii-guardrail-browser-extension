@@ -45,7 +45,9 @@ The extension processes data on your device for the following purposes:
 
 - **Local detection** of personal data in text you paste or enter on supported sites.
 - **Review and marking** of detected items so you can decide what to keep, replace, or ignore.
-- **Replacement** of selected items with placeholders or synthetic substitutes.
+- **Replacement** of selected items with placeholders or synthetic substitutes. If you switch on
+  the optional **auto-mode**, detected items are replaced as soon as you paste, without
+  asking first; you can undo this or open the review from the notice that follows.
 - **Restoration** of original values in responses, where you have chosen to do so.
 - **Storing your settings** and the **placeholder/value mappings** needed to perform the
   replacement and restoration you requested.
@@ -113,7 +115,9 @@ perform yourself:
   reads the pasted text from the paste event itself (`ClipboardEvent.clipboardData`), which the
   browser hands to the page for that single event. Pastes into other fields on the page are
   ignored, as is pasted text shorter than 10 characters. The text is then processed locally for
-  detection and presented to you for review.
+  detection and presented to you for review. If you have switched on **auto-mode**, detected
+  items are instead replaced straight away and a notice lets you undo the replacement or open
+  the review.
 - **When you copy.** If the **Intercept copy** setting is enabled, then when you copy text on a
   supported site the extension inspects the copied text for placeholders it inserted earlier, so
   that it can offer to restore the original values. It takes that text from the copy event or
@@ -138,7 +142,9 @@ because they happen in the page in direct response to your click, in the same wa
 copy button works.
 
 **How to switch it off.** The copy-side behavior is controlled by the **Intercept copy** setting.
-Reviewing what you paste is controlled by the master protection toggle. With master protection
+Reviewing what you paste is controlled by the master protection toggle. Whether detected items
+are shown to you for review or replaced automatically is controlled by the **auto-mode**
+setting, which is off unless you turn it on. With master protection
 switched off, the extension no longer reviews what you paste, no longer inspects what you copy,
 and stores nothing further. The page-world observer described above remains installed on the
 supported sites, because it is part of the page scripts injected there, but nothing in the
@@ -227,7 +233,9 @@ decide what text to process and what to send onward to an AI service.
 The extension does **not** carry out automated decision-making that produces legal effects or
 similarly significantly affects you within the meaning of Art. 22 GDPR. Detection is **assistive
 scoring** that surfaces suggestions for your review; it does not make decisions about a data
-subject. The extension does not create profiles of users.
+subject. If you switch on **auto-mode**, those suggestions are applied to your own pasted text
+at your instruction, on your device, and you can undo them; this likewise produces no legal or
+similarly significant effect. The extension does not create profiles of users.
 
 ## 12. Your Rights
 

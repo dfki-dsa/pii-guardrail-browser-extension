@@ -2,7 +2,11 @@
 
 import { EntityMap } from '../../src/shared/entity-map';
 import { resolveText } from '../../src/shared/placeholder-resolver';
-import { attachDeAnonBanner, type TokenResolver } from '../../src/ui/banner/de-anon-banner';
+import {
+  attachDeAnonBanner,
+  hasLiveBanner,
+  type TokenResolver,
+} from '../../src/ui/banner/de-anon-banner';
 
 /**
  * The banner is handed a resolver rather than a map of what is resolvable,
@@ -320,6 +324,75 @@ describe('attachDeAnonBanner', () => {
     attachDeAnonBanner(responseElement, resolverFor(entityMap));
 
     expect(document.querySelectorAll('.pg-deanon-host')).toHaveLength(1);
+  });
+
+  describe('when the site removes the banner but keeps the reply', () => {
+    // The banner is a sibling of the reply, in markup the site owns. A site
+    // re-rendering around a finished reply can drop it while the reply
+    // element, and the mark saying it has a banner, survive.
+    function replyWithBanner(): { responseElement: HTMLElement; resolve: TokenResolver } {
+      const entityMap = new EntityMap({ '[PERSON_1]': 'Lukas Wagner' });
+      const container = document.createElement('div');
+      const responseElement = document.createElement('div');
+      responseElement.innerHTML = '<p>Reply about [PERSON_1]</p>';
+      container.append(responseElement);
+      document.body.append(container);
+      const resolve = resolverFor(entityMap);
+      attachDeAnonBanner(responseElement, resolve);
+      return { responseElement, resolve };
+    }
+
+    it('knows the banner is gone', () => {
+      const { responseElement } = replyWithBanner();
+      expect(hasLiveBanner(responseElement)).toBe(true);
+
+      document.querySelector('.pg-deanon-host')!.remove();
+
+      expect(hasLiveBanner(responseElement)).toBe(false);
+      // The mark alone still claims a banner; it must not be believed.
+      expect(responseElement.dataset.pgBanner).toBe('attached');
+    });
+
+    it('attaches a new banner instead of refusing for the rest of the page', () => {
+      const { responseElement, resolve } = replyWithBanner();
+      document.querySelector('.pg-deanon-host')!.remove();
+
+      const again = attachDeAnonBanner(responseElement, resolve);
+
+      expect(again).not.toBeNull();
+      expect(document.querySelectorAll('.pg-deanon-host')).toHaveLength(1);
+      expect(hasLiveBanner(responseElement)).toBe(true);
+    });
+
+    it('puts the reply back as it was if the lost banner had originals revealed', () => {
+      const { responseElement, resolve } = replyWithBanner();
+      const host = document.querySelector('.pg-deanon-host') as HTMLElement;
+      (host.shadowRoot!.getElementById('pg-reveal-btn') as HTMLButtonElement).click();
+      expect(responseElement.textContent).toContain('Lukas Wagner');
+
+      host.remove();
+      attachDeAnonBanner(responseElement, resolve);
+
+      // No orphaned reveal layer: the reply shows its tokens again and the
+      // new banner starts in the hidden state.
+      expect(responseElement.querySelector('.pg-deanon-overlay-container')).toBeNull();
+      expect(responseElement.textContent).toContain('[PERSON_1]');
+      expect(responseElement.textContent).not.toContain('Lukas Wagner');
+      const fresh = document.querySelector('.pg-deanon-host') as HTMLElement;
+      expect(fresh.shadowRoot!.getElementById('pg-reveal-btn')!.textContent).toBe('Reveal originals');
+    });
+
+    it('reports no banner for an element that never had one, or after a clean detach', () => {
+      const { responseElement, resolve } = replyWithBanner();
+      expect(hasLiveBanner(document.createElement('div'))).toBe(false);
+
+      document.querySelector('.pg-deanon-host')!.remove();
+      const again = attachDeAnonBanner(responseElement, resolve)!;
+      again.detach();
+
+      expect(hasLiveBanner(responseElement)).toBe(false);
+      expect(responseElement.dataset.pgBanner).toBeUndefined();
+    });
   });
 
   describe('never annotates something the user types into', () => {

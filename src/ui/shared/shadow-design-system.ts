@@ -105,6 +105,38 @@ export const SHADOW_DESIGN_SYSTEM_STYLES = `
     outline-offset: 2px;
   }
 
+  /* A button that is only its label until hovered; colour follows the surface. */
+  .pg-design-button-ghost {
+    border-color: transparent;
+    background: transparent;
+    color: inherit;
+  }
+
+  .pg-design-button-ghost:hover {
+    border-color: transparent;
+    background: rgb(148 163 184 / 18%);
+  }
+
+  /* A toast: fixed above the bottom of the window, centred on left: 50%
+     unless the surface sets its own left, and as wide as its content. */
+  .pg-design-toast {
+    position: fixed;
+    bottom: 132px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2147483646;
+    align-items: center;
+    gap: 12px;
+    width: max-content;
+    font-size: 13px;
+    pointer-events: auto;
+    animation: pg-design-pop-in 160ms ease-out;
+  }
+
+  .pg-design-toast [hidden] {
+    display: none;
+  }
+
   /* Used by horizontally centered fixed surfaces that set left: 50%. */
   @keyframes pg-design-pop-in {
     from {

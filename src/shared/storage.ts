@@ -1,4 +1,4 @@
-import type { Settings, FeedbackEntry, NerModelKey, NerProviderMode, NerWebGpuDtype, GroupName, AllowlistEntry, BlocklistEntry, CancelDetectionBehavior, LocalAiUnloadTimeoutMs } from './message-types';
+import type { Settings, FeedbackEntry, NerModelKey, NerProviderMode, NerWebGpuDtype, GroupName, AllowlistEntry, BlocklistEntry, CancelDetectionBehavior, LocalAiUnloadTimeoutMs, PasteReviewMode } from './message-types';
 import { ENTITY_TYPES } from './message-types';
 import { DEFAULT_CURATED_URLS, DEFAULT_SETTINGS, LOCAL_AI_UNLOAD_TIMEOUT_CHOICES, NER_WEBGPU_DTYPE_CHOICES, runtimeNerModelKey } from './constants';
 import { GROUP_NAMES, GROUP_DEFAULT_ON } from './category-groups';
@@ -56,6 +56,10 @@ function isCancelDetectionBehavior(value: unknown): value is CancelDetectionBeha
   return value === 'ask' || value === 'paste-original' || value === 'drop';
 }
 
+function isPasteReviewMode(value: unknown): value is PasteReviewMode {
+  return value === 'review' || value === 'auto';
+}
+
 function isLocalAiUnloadTimeoutMs(value: unknown): value is LocalAiUnloadTimeoutMs {
   return (LOCAL_AI_UNLOAD_TIMEOUT_CHOICES as readonly unknown[]).includes(value);
 }
@@ -84,7 +88,12 @@ function normalizeBlocklist(raw: unknown): BlocklistEntry[] {
   );
 }
 
-function normalizeSettings(raw: unknown): Settings {
+/**
+ * Settings as this version understands them: defaults filled in, anything
+ * invalid reset. Also for callers handed a settings object by a storage or
+ * runtime event, which arrives exactly as it was written.
+ */
+export function normalizeSettings(raw: unknown): Settings {
   const candidate = raw && typeof raw === 'object' ? raw as Partial<Settings> : {};
   const settings = { ...DEFAULT_SETTINGS, ...candidate };
   if (typeof settings.minConfidence !== 'number' || settings.minConfidence <= 0 || settings.minConfidence > 1) {
@@ -128,6 +137,9 @@ function normalizeSettings(raw: unknown): Settings {
   }
   if (!isCancelDetectionBehavior(settings.cancelDetectionBehavior)) {
     settings.cancelDetectionBehavior = DEFAULT_SETTINGS.cancelDetectionBehavior;
+  }
+  if (!isPasteReviewMode(settings.pasteReviewMode)) {
+    settings.pasteReviewMode = DEFAULT_SETTINGS.pasteReviewMode;
   }
   if (!isLocalAiUnloadTimeoutMs(settings.localAiUnloadTimeoutMs)) {
     settings.localAiUnloadTimeoutMs = DEFAULT_SETTINGS.localAiUnloadTimeoutMs;

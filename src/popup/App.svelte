@@ -59,6 +59,8 @@
           {protection}
           {categories}
           {vault}
+          autoMode={settings.autoMode}
+          setAutoMode={settings.setAutoMode}
           openPrivacyPolicy={settings.openPrivacyPolicy}
           openTermsOfUse={settings.openTermsOfUse}
           openImpressum={settings.openImpressum}

@@ -1,3 +1,11 @@
+import {
+  findInFormControl,
+  findTextRange,
+  normalizeLineEnds,
+  trimIgnorable,
+  type OccurrenceHint,
+} from '../composer-text-range';
+
 /**
  * Interface for site-specific DOM adapters.
  * Each LLM chat site has different DOM structure — adapters abstract those differences.
@@ -181,4 +189,56 @@ export function insertTextCompat(element: HTMLElement, text: string): void {
       })
     );
   }
+}
+
+/**
+ * Swap text this extension inserted earlier for `newText`.
+ *
+ * Finds `oldText` in the composer, selects it, and inserts through the same
+ * path as a paste, so the site's editor sees an ordinary replacement of a
+ * selection. Returns false — having changed nothing — when `oldText` is not
+ * there exactly once: the user edited it, sent it, or the editor reshaped it
+ * beyond recognition.
+ *
+ * `hint` says which copy is meant when the same text is there more than once;
+ * see `findInFormControl` and `findTextRange`.
+ *
+ * A true return means the swap was attempted, not that the editor kept it.
+ * Callers that care — all of them — re-read the composer afterwards.
+ */
+export function replaceTextCompat(
+  element: HTMLElement,
+  oldText: string,
+  newText: string,
+  hint: OccurrenceHint | null = null,
+): boolean {
+  if (isTextFormControl(element)) {
+    const found = findInFormControl(element.value, oldText, hint);
+    if (!found) return false;
+    element.focus();
+    try {
+      element.setSelectionRange(found.start, found.end);
+    } catch {
+      // Without a selection the insert would land at the caret and leave the
+      // old text in place beside the new. Not attempting it is the safe side.
+      return false;
+    }
+    insertIntoFormControl(element, normalizeLineEnds(newText));
+    return true;
+  }
+
+  const range = findTextRange(element, oldText, hint);
+  if (!range) return false;
+
+  const selection = window.getSelection();
+  if (!selection) return false;
+
+  element.focus();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  // The range excludes whitespace around the old text, so the new text goes
+  // in without its own — otherwise each swap would double the surrounding
+  // blank lines.
+  insertTextCompat(element, trimIgnorable(newText));
+  return true;
 }

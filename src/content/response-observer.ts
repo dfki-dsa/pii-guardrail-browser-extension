@@ -135,7 +135,7 @@ export class ResponseObserver {
  * current value lives on the `.value` property and is not surfaced via
  * `Node.textContent` for controlled React components.
  */
-function collectResponseText(element: HTMLElement): string {
+export function collectResponseText(element: HTMLElement): string {
   const parts: string[] = [element.textContent || ''];
   const controls = element.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
     'input, textarea',

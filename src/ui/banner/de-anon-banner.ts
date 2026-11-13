@@ -16,6 +16,7 @@
 import type { ResolveResult } from '../../shared/placeholder-resolver';
 import { isInEditableRegion } from '../shared/editable-region';
 import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
+import { findTextColumn } from './text-column';
 
 /** Resolves the tokens currently in scope wherever they occur in `text`. */
 export type TokenResolver = (text: string) => ResolveResult;
@@ -96,8 +97,16 @@ export function attachDeAnonBanner(
   const theme = options.theme ?? 'dark';
   const readFormControls = options.readFormControls ?? false;
 
-  // Don't attach twice
-  if (responseElement.dataset.pgBanner === 'attached') return null;
+  // Don't attach twice — but only a banner that is still on the page counts.
+  // The banner sits beside the reply, in markup the site owns, and a site
+  // re-rendering around a finished reply can sweep it away while the reply
+  // element and its mark survive. Trusting the mark alone would then refuse
+  // this reply a banner for the rest of the page's life, so the banner's own
+  // record is asked instead.
+  if (hasLiveBanner(responseElement)) return null;
+  // Undo whatever a lost banner left behind (a reveal layer, hidden content,
+  // the mark on the element) before starting over.
+  liveBanners.get(responseElement)?.detach();
 
   // Revealing replaces the region it annotates. Doing that to a message box
   // would write original values into text about to be sent.
@@ -122,6 +131,9 @@ export function attachDeAnonBanner(
   // Create banner host with Shadow DOM
   const host = document.createElement('div');
   host.className = 'pg-deanon-host';
+  // Said outright: a site's own styles can make a bare div inline, and an
+  // inline box takes no width.
+  host.style.display = 'block';
   const shadow = host.attachShadow({ mode: 'closed' });
 
   let revealed = false;
@@ -192,13 +204,61 @@ export function attachDeAnonBanner(
   // Insert banner before the response element
   responseElement.parentElement?.insertBefore(host, responseElement);
 
+  // Keep the banner over the reply's text where the reply element is wider
+  // than the text in it. The reply changing size is what moves the column:
+  // more of it streaming in, the window resized, a sidebar opened.
+  const align = (): void => alignWithTextColumn(host, responseElement);
+  align();
+  const resizeWatcher =
+    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(align);
+  resizeWatcher?.observe(responseElement);
+
   const detach = (): void => {
     if (revealed) hideRevealed();
+    resizeWatcher?.disconnect();
     host.remove();
     delete responseElement.dataset.pgBanner;
+    if (liveBanners.get(responseElement)?.host === host) {
+      liveBanners.delete(responseElement);
+    }
   };
 
+  liveBanners.set(responseElement, { host, detach });
+
   return { element: responseElement, refresh: renderCount, detach };
+}
+
+/**
+ * The banner each annotated element currently has, so a mark left behind by a
+ * banner the site removed can be told apart from a banner that is really
+ * there. Weak, so a reply the site discards takes its entry with it.
+ */
+const liveBanners = new WeakMap<HTMLElement, { host: HTMLElement; detach: () => void }>();
+
+/** Whether `element` has a banner that is still on the page. */
+export function hasLiveBanner(element: HTMLElement): boolean {
+  return liveBanners.get(element)?.host.isConnected === true;
+}
+
+/**
+ * Give `host` the left edge and width of the column the reply's text is in,
+ * or let it fill its parent again when the text fills the reply.
+ */
+function alignWithTextColumn(host: HTMLElement, responseElement: HTMLElement): void {
+  // Measured from where the banner sits when left alone.
+  host.style.marginLeft = '';
+  host.style.width = '';
+
+  const column = findTextColumn(responseElement);
+  if (!column) return;
+  const natural = host.getBoundingClientRect();
+  const offset = column.left - natural.left;
+  // A column that reaches outside the banner's own space is not one the
+  // banner can be moved onto.
+  if (natural.width === 0 || offset < 0 || offset + column.width > natural.width + 1) return;
+
+  host.style.marginLeft = `${offset}px`;
+  host.style.width = `${column.width}px`;
 }
 
 function buildRevealLayer(

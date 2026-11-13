@@ -49,6 +49,7 @@ WHAT IT DOES
 • Intercepts pastes on supported chat sites and offers a local review step.
 • Highlights potentially personal or sensitive spans such as names, emails, phone numbers, addresses, IBANs, credit card numbers, IP addresses, organizations, and locations.
 • Lets you accept or ignore each detected span and inserts typed placeholders for the spans you accept.
+• Optional auto-mode (off by default): replaces detected spans as soon as you paste, then shows a notice where you can undo the replacement or open the review.
 • Keeps a local identity vault so the same value gets the same placeholder across a conversation, and supports restoration where the chat surface allows it. Restored values are highlighted in the AI response, and restoration never writes into the message box or any other field you can type in.
 • Combines fast pattern recognizers with an optional local AI model that runs entirely in your browser through ONNX Runtime Web, using WebGPU when available and CPU/WASM otherwise.
 • Falls back to a clearly degraded pattern-only mode when local AI is unavailable, instead of silently pasting unchecked text.

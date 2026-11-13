@@ -279,6 +279,9 @@ export const DEFAULT_SETTINGS: Settings = {
   skipCodeBlocks: false,
   // Privacy-safe default: an explicit cancel asks what to do with the pending paste.
   cancelDetectionBehavior: 'ask',
+  // Privacy-safe default and no change for existing users: every paste with
+  // detected items is reviewed unless the user opts into automatic replacement.
+  pasteReviewMode: 'review',
   localAiUnloadTimeoutMs: OFFSCREEN_IDLE_MS,
   keepLocalAiLoadedWhileActive: true,
   autoWarmLocalAiOnActiveSupportedPage: true,
