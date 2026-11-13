@@ -100,6 +100,33 @@ describe('ToastLifetime', () => {
     expect(onPage()).toBe(false);
   });
 
+  it('keeps holding while either the pointer or focus is still there', () => {
+    const surface = document.createElement('div');
+    const life = new ToastLifetime(host, 1000, onDispose);
+    life.pauseWhileEngaged(surface, { focus: true });
+    life.mount();
+
+    // Tabbed onto a button, then the pointer passes over and away.
+    surface.dispatchEvent(new Event('focusin'));
+    surface.dispatchEvent(new Event('mouseenter'));
+    surface.dispatchEvent(new Event('mouseleave'));
+    jest.advanceTimersByTime(10_000);
+    expect(onPage()).toBe(true);
+
+    // The other way round: focus leaves while the pointer rests on it.
+    surface.dispatchEvent(new Event('mouseenter'));
+    surface.dispatchEvent(new Event('focusout'));
+    jest.advanceTimersByTime(10_000);
+    expect(onPage()).toBe(true);
+
+    // Neither holds any more: the countdown starts afresh.
+    surface.dispatchEvent(new Event('mouseleave'));
+    jest.advanceTimersByTime(999);
+    expect(onPage()).toBe(true);
+    jest.advanceTimersByTime(1);
+    expect(onPage()).toBe(false);
+  });
+
   it('ignores focus unless asked to follow it', () => {
     const surface = document.createElement('div');
     const life = new ToastLifetime(host, 1000, onDispose);

@@ -7,6 +7,7 @@ import {
   findInFormControl,
   findTextRange,
   locateAtCaret,
+  locateInFormControl,
   occurrencesOf,
   readComposerText,
   stripIgnorable,
@@ -59,26 +60,77 @@ describe('findInFormControl', () => {
     expect(findInFormControl('a\nb', 'a\r\nb')).toEqual({ start: 0, end: 3 });
   });
 
-  it('prefers the caret the text was inserted at when the text appears twice', () => {
+  it('uses the named copy when the text appears twice', () => {
     const value = 'same text | same text';
-    expect(findInFormControl(value, 'same text', 12)).toEqual({ start: 12, end: 21 });
-  });
-
-  it('refuses an ambiguous match without a usable hint', () => {
-    expect(findInFormControl('same text | same text', 'same text')).toBeNull();
-    expect(findInFormControl('same text | same text', 'same text', 3)).toBeNull();
-  });
-
-  it('falls back to a unique match when the hint has gone stale', () => {
-    expect(findInFormControl('typed first: [PERSON_1]', '[PERSON_1]', 0)).toEqual({
-      start: 13,
-      end: 23,
+    expect(findInFormControl(value, 'same text', { ordinal: 1, total: 2 })).toEqual({
+      start: 12,
+      end: 21,
     });
+    expect(findInFormControl(value, 'same text', { ordinal: 0, total: 2 })).toEqual({
+      start: 0,
+      end: 9,
+    });
+  });
+
+  it('refuses an ambiguous match when no copy is named', () => {
+    const value = 'same text | same text';
+    expect(findInFormControl(value, 'same text')).toBeNull();
+    expect(findInFormControl(value, 'same text', { ordinal: null, total: 2 })).toBeNull();
+  });
+
+  it('finds the named copy after typing elsewhere moved it', () => {
+    expect(
+      findInFormControl('typed first: [PERSON_1]', '[PERSON_1]', { ordinal: 0, total: 1 }),
+    ).toEqual({ start: 13, end: 23 });
+  });
+
+  it('touches nothing once a copy has come or gone since the text went in', () => {
+    // Two identical pastes, the newer one deleted: the copy that is left is
+    // the earlier paste, however obvious a single match looks.
+    expect(findInFormControl('same text', 'same text', { ordinal: 1, total: 2 })).toBeNull();
+    expect(findInFormControl('same text', 'same text', { ordinal: 0, total: 2 })).toBeNull();
+    expect(findInFormControl('same text', 'same text', { ordinal: null, total: 2 })).toBeNull();
+    // And a copy added since.
+    expect(
+      findInFormControl('same text | same text', 'same text', { ordinal: 0, total: 1 }),
+    ).toBeNull();
   });
 
   it('reports text that is no longer there', () => {
     expect(findInFormControl('edited by hand', '[PERSON_1]')).toBeNull();
     expect(findInFormControl('anything', '')).toBeNull();
+  });
+});
+
+describe('locateInFormControl', () => {
+  const control = (value: string, caret: number): HTMLTextAreaElement => {
+    const el = document.createElement('textarea');
+    el.value = value;
+    el.setSelectionRange(caret, caret);
+    return el;
+  };
+
+  it('names the copy that ends at the caret, and how many there are', () => {
+    expect(locateInFormControl(control('same text | same text', 21), 'same text')).toEqual({
+      ordinal: 1,
+      total: 2,
+    });
+    expect(locateInFormControl(control('same text | same text', 9), 'same text')).toEqual({
+      ordinal: 0,
+      total: 2,
+    });
+  });
+
+  it('matches text inserted with CRLF line ends', () => {
+    expect(locateInFormControl(control('x a\nb', 5), 'a\r\nb')).toEqual({ ordinal: 0, total: 1 });
+  });
+
+  it('still counts the copies when the caret names none of them', () => {
+    expect(locateInFormControl(control('same text | same text', 5), 'same text')).toEqual({
+      ordinal: null,
+      total: 2,
+    });
+    expect(locateInFormControl(control('anything', 0), '')).toBeNull();
   });
 });
 
@@ -179,16 +231,16 @@ describe('telling two copies of the same paste apart', () => {
     expect(locateAtCaret(el, INSERTED)).toEqual({ ordinal: 0, total: 2 });
   });
 
-  it('has no answer when the caret is not at the end of a copy, or is elsewhere', () => {
+  it('still counts the copies when the caret is not at the end of one, or is elsewhere', () => {
     const el = richComposer(`${paragraphs(INSERTED)}<p>typed after</p>`);
     caretAfter(el.lastElementChild!);
-    expect(locateAtCaret(el, INSERTED)).toBeNull();
+    expect(locateAtCaret(el, INSERTED)).toEqual({ ordinal: null, total: 1 });
 
     const outside = document.createElement('p');
     outside.textContent = 'elsewhere';
     document.body.append(outside);
     caretAfter(outside);
-    expect(locateAtCaret(el, INSERTED)).toBeNull();
+    expect(locateAtCaret(el, INSERTED)).toEqual({ ordinal: null, total: 1 });
   });
 
   it('finds the named copy, and only while the number of copies is unchanged', () => {
@@ -206,6 +258,9 @@ describe('telling two copies of the same paste apart', () => {
     el.lastElementChild!.remove();
     expect(findTextRange(el, INSERTED, { ordinal: 1, total: 2 })).toBeNull();
     expect(findTextRange(el, INSERTED, { ordinal: 5, total: 1 })).toBeNull();
+    // Not even when the count was all the hint knew.
+    expect(findTextRange(el, INSERTED, { ordinal: null, total: 2 })).toBeNull();
+    expect(findTextRange(el, INSERTED, { ordinal: null, total: 1 })).not.toBeNull();
   });
 });
 

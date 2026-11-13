@@ -28,6 +28,12 @@
 export interface TurnBannerDeps {
   /** Whether `element` has a banner that is still on the page. */
   hasLiveBanner: (element: HTMLElement) => boolean;
+  /**
+   * A reply's text as a banner would read it. Not `textContent` alone: an
+   * artifact-style reply keeps its content in the `.value` of form controls,
+   * and a reply whose tokens are only there still needs its banner.
+   */
+  readText: (element: HTMLElement) => string;
   /** Cheap check: could `text` contain anything that resolves? */
   mightResolve: (text: string) => boolean;
   /** Try to attach a banner; true when one was attached. */
@@ -55,7 +61,7 @@ export class TurnBannerKeeper {
       if (!worthLooking) continue;
 
       this.seen.add(element);
-      if (!this.deps.mightResolve(element.textContent ?? '')) continue;
+      if (!this.deps.mightResolve(this.deps.readText(element))) continue;
       if (this.deps.attach(element)) this.hadBanner.add(element);
     }
   }

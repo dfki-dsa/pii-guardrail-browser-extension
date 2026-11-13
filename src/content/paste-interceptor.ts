@@ -1,14 +1,12 @@
 import type { SiteAdapter } from './site-adapters/adapter-interface';
-import {
-  isTextFormControl,
-  replaceTextCompat,
-  type InsertHint,
-} from './site-adapters/adapter-interface';
+import { isTextFormControl, replaceTextCompat } from './site-adapters/adapter-interface';
 import {
   locateAtCaret,
+  locateInFormControl,
   occurrencesOf,
   readComposerText,
   stripIgnorable,
+  type OccurrenceHint,
 } from './composer-text-range';
 import type {
   CancelDetectionRequest,
@@ -118,7 +116,8 @@ export class PasteInterceptor {
    * Where the last insert went, so `replaceInserted` addresses the same
    * message box and — when the same text is in it twice — the same copy.
    */
-  private lastInsert: ({ inputElement: HTMLElement } & InsertHint) | null = null;
+  private lastInsert: { inputElement: HTMLElement; occurrence: OccurrenceHint | null } | null =
+    null;
   private activePasteText: string | null = null;
   private waitForReady: () => Promise<void>;
 
@@ -456,7 +455,7 @@ export class PasteInterceptor {
     const oldBefore = occurrencesOf(before, oldCore).length;
     const newBefore = occurrencesOf(before, newCore).length;
 
-    if (!replaceTextCompat(target.inputElement, oldText, newText, target)) {
+    if (!replaceTextCompat(target.inputElement, oldText, newText, target.occurrence)) {
       return false;
     }
 
@@ -472,7 +471,6 @@ export class PasteInterceptor {
     if (!oneOldGone || !oneNewThere) return false;
 
     // The hint named the old text's copy; it says nothing about the new one.
-    target.start = undefined;
     target.occurrence = null;
     return true;
   }
@@ -500,16 +498,14 @@ export class PasteInterceptor {
       return false;
     }
 
-    const start =
-      this.savedSelection?.kind === 'formControl' ? this.savedSelection.start : undefined;
-
     this.restoreSelection();
     this.adapter.insertText(input, text);
     this.lastInsert = {
       inputElement: input,
-      start,
       // Taken now, while the caret still sits at the end of what went in.
-      occurrence: isTextFormControl(input) ? null : locateAtCaret(input, text),
+      occurrence: isTextFormControl(input)
+        ? locateInFormControl(input, text)
+        : locateAtCaret(input, text),
     };
     return true;
   }

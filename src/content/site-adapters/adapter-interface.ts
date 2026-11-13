@@ -7,15 +7,6 @@ import {
 } from '../composer-text-range';
 
 /**
- * Where text was inserted, remembered so a later swap addresses the same
- * copy: the caret offset for a form control, the occurrence for a rich editor.
- */
-export interface InsertHint {
-  start?: number;
-  occurrence?: OccurrenceHint | null;
-}
-
-/**
  * Interface for site-specific DOM adapters.
  * Each LLM chat site has different DOM structure — adapters abstract those differences.
  */
@@ -219,10 +210,10 @@ export function replaceTextCompat(
   element: HTMLElement,
   oldText: string,
   newText: string,
-  hint: InsertHint = {},
+  hint: OccurrenceHint | null = null,
 ): boolean {
   if (isTextFormControl(element)) {
-    const found = findInFormControl(element.value, oldText, hint.start);
+    const found = findInFormControl(element.value, oldText, hint);
     if (!found) return false;
     element.focus();
     try {
@@ -236,7 +227,7 @@ export function replaceTextCompat(
     return true;
   }
 
-  const range = findTextRange(element, oldText, hint.occurrence);
+  const range = findTextRange(element, oldText, hint);
   if (!range) return false;
 
   const selection = window.getSelection();

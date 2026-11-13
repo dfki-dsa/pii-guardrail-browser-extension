@@ -15,7 +15,7 @@ import { GenericAdapter } from './site-adapters/generic-adapter';
 import { PasteInterceptor, type ComposerMatch } from './paste-interceptor';
 import { sendRuntimeMessageBestEffort } from './runtime-messaging';
 import { shouldShowCriticalLocalAiModal } from './critical-local-ai-modal-status';
-import { ResponseObserver } from './response-observer';
+import { ResponseObserver, collectResponseText } from './response-observer';
 import { ConversationFiler } from './conversation-filing';
 import { findLooseTokenAnchors } from './banner-anchor';
 import {
@@ -607,6 +607,7 @@ function attachLooseBanners(composer: HTMLElement | null, transcript: string): v
  */
 const turnBanners = new TurnBannerKeeper({
   hasLiveBanner,
+  readText: collectResponseText,
   mightResolve: (text) => scope.mightResolve(text),
   attach: (element) => attachBanner(element, true),
 });

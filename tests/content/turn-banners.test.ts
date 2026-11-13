@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { collectResponseText } from '../../src/content/response-observer';
 import { TurnBannerKeeper } from '../../src/content/turn-banners';
 
 describe('TurnBannerKeeper', () => {
@@ -27,6 +28,7 @@ describe('TurnBannerKeeper', () => {
     });
     keeper = new TurnBannerKeeper({
       hasLiveBanner: (element) => withBanner.has(element),
+      readText: collectResponseText,
       mightResolve: (text) => text.includes('['),
       attach,
     });
@@ -50,6 +52,23 @@ describe('TurnBannerKeeper', () => {
 
     expect(attach).toHaveBeenCalledTimes(1);
     expect(attach).toHaveBeenCalledWith(tokens);
+  });
+
+  it('attaches a banner to a reply whose tokens are only in a form control', () => {
+    // An artifact card: the visible text has no tokens, the draft inside it
+    // lives in the `.value` of its fields and never shows in `textContent`.
+    const card = reply('Open in mail');
+    const subject = document.createElement('input');
+    const body = document.createElement('textarea');
+    card.append(subject, body);
+    subject.value = 'Your appointment';
+    body.value = 'Dear [PERSON_1], see you on Friday.';
+    expect(card.textContent).not.toContain('[');
+
+    keeper.reconcile([card, reply('Anything else?')]);
+
+    expect(attach).toHaveBeenCalledTimes(1);
+    expect(attach).toHaveBeenCalledWith(card);
   });
 
   it('does not re-read replies it has already ruled out', () => {
@@ -131,6 +150,7 @@ describe('TurnBannerKeeper', () => {
     let known = false;
     keeper = new TurnBannerKeeper({
       hasLiveBanner: (element) => withBanner.has(element),
+      readText: collectResponseText,
       mightResolve: (text) => known && text.includes('Jordan Park'),
       attach,
     });

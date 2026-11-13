@@ -87,14 +87,35 @@ export class ToastLifetime {
   /**
    * Hold the countdown while the pointer is over `element` and, with
    * `focus`, while keyboard focus is inside it.
+   *
+   * The two are tracked together: the countdown resumes only once neither
+   * holds. Otherwise moving the pointer away would restart it under someone
+   * who has tabbed onto a button and is about to press it.
    */
   pauseWhileEngaged(element: HTMLElement | null, options: { focus?: boolean } = {}): void {
     if (!element) return;
-    element.addEventListener('mouseenter', () => this.pause());
-    element.addEventListener('mouseleave', () => this.resume());
-    if (options.focus) {
-      element.addEventListener('focusin', () => this.pause());
-      element.addEventListener('focusout', () => this.resume());
-    }
+    let hovered = false;
+    let focused = false;
+    const update = (): void => {
+      if (hovered || focused) this.pause();
+      else this.resume();
+    };
+    element.addEventListener('mouseenter', () => {
+      hovered = true;
+      update();
+    });
+    element.addEventListener('mouseleave', () => {
+      hovered = false;
+      update();
+    });
+    if (!options.focus) return;
+    element.addEventListener('focusin', () => {
+      focused = true;
+      update();
+    });
+    element.addEventListener('focusout', () => {
+      focused = false;
+      update();
+    });
   }
 }

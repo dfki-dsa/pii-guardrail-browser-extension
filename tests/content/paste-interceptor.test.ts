@@ -741,6 +741,42 @@ describe('PasteInterceptor', () => {
         interceptor.stop();
       });
 
+      it('changes nothing in a textarea once the newer copy was deleted', async () => {
+        // What is left is the earlier paste. It is there exactly once, which
+        // used to be taken as proof that it was the text to restore.
+        const input = document.createElement('textarea');
+        document.body.append(input);
+        const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+        interceptor.start();
+
+        pasteAt(interceptor, input, 0, REPLACED);
+        input.value += '\n';
+        pasteAt(interceptor, input, input.value.length, REPLACED);
+        input.value = `${REPLACED}\n`;
+
+        await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+        expect(input.value).toBe(`${REPLACED}\n`);
+
+        interceptor.stop();
+      });
+
+      it('restores a textarea paste that typing has since pushed along', async () => {
+        const input = document.createElement('textarea');
+        document.body.append(input);
+        const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+        interceptor.start();
+
+        pasteAt(interceptor, input, 0, REPLACED);
+        input.value += '\n';
+        pasteAt(interceptor, input, input.value.length, REPLACED);
+        input.value = `Typed first. ${input.value}`;
+
+        await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(true);
+        expect(input.value).toBe(`Typed first. ${REPLACED}\n${ORIGINAL}`);
+
+        interceptor.stop();
+      });
+
       it('restores the second copy in a rich editor', async () => {
         const input = document.createElement('div');
         input.setAttribute('contenteditable', 'true');

@@ -39,30 +39,37 @@ export function normalizeLineEnds(text: string): string {
 }
 
 /**
- * Where `needle` sits in a form control's value.
+ * Where `needle` sits in a form control's value, or null when it cannot be
+ * told which text is meant.
  *
  * A form control keeps text exactly as inserted, so this is an exact match.
- * `hintStart` is the caret the text was inserted at: checked first, because
- * it stays right unless the user has typed in front of it, and it picks the
- * correct copy when the same text appears twice. Without a usable hint the
- * match must be unique.
+ * Which copy is chosen follows `pickOccurrence`, the same rule a rich editor
+ * gets.
  */
 export function findInFormControl(
   value: string,
   needle: string,
-  hintStart?: number,
+  hint?: OccurrenceHint | null,
 ): { start: number; end: number } | null {
   const wanted = normalizeLineEnds(needle);
   if (!wanted) return null;
+  const start = pickOccurrence(occurrencesOf(value, wanted), hint);
+  return start === null ? null : { start, end: start + wanted.length };
+}
 
-  if (hintStart !== undefined && value.startsWith(wanted, hintStart)) {
-    return { start: hintStart, end: hintStart + wanted.length };
-  }
-
-  const first = value.indexOf(wanted);
-  if (first < 0) return null;
-  if (value.indexOf(wanted, first + 1) >= 0) return null;
-  return { start: first, end: first + wanted.length };
+/**
+ * The copy of `needle` that ends at a form control's caret. Called right
+ * after inserting, when the caret sits at the end of what went in.
+ */
+export function locateInFormControl(
+  element: HTMLTextAreaElement | HTMLInputElement,
+  needle: string,
+): OccurrenceHint | null {
+  const wanted = normalizeLineEnds(needle);
+  if (!wanted) return null;
+  const starts = occurrencesOf(element.value, wanted);
+  const caret = element.selectionStart;
+  return hintFor(starts, caret === null ? -1 : starts.indexOf(caret - wanted.length));
 }
 
 /**
@@ -111,27 +118,57 @@ export function occurrencesOf(flat: string, wanted: string): number[] {
  * copy number `ordinal` (from zero) of `total` in the composer.
  *
  * Needed because a user can paste the same thing twice. An ordinal survives
- * typing elsewhere in the draft, which an offset would not; `total` is kept so
- * that a copy added or removed since makes the hint void rather than wrong.
+ * typing elsewhere in the draft, which an offset would not. `total` is what
+ * makes the hint safe: it is always known, and a copy added or removed since
+ * makes the hint void rather than wrong. `ordinal` is null when the caret
+ * could not say which copy had just gone in.
  */
 export interface OccurrenceHint {
-  ordinal: number;
+  ordinal: number | null;
   total: number;
+}
+
+function hintFor(starts: readonly number[], ordinal: number): OccurrenceHint {
+  return { ordinal: ordinal < 0 ? null : ordinal, total: starts.length };
+}
+
+/**
+ * Which of the copies at `starts` is the one to act on, or null when that
+ * cannot be told.
+ *
+ * With a hint, the number of copies has to be what it was when the text went
+ * in. If one has come or gone since, the copy that is left may be an earlier
+ * paste — deleting the newer of two identical pastes leaves exactly that —
+ * and restoring an original into it would expose text the user had chosen
+ * to keep protected. So a changed count means nothing is touched, even when
+ * only one copy remains and the choice looks obvious.
+ *
+ * Without a hint there is nothing to compare against, and the text has to be
+ * there exactly once.
+ */
+function pickOccurrence(
+  starts: readonly number[],
+  hint: OccurrenceHint | null | undefined,
+): number | null {
+  if (hint && starts.length !== hint.total) return null;
+  if (hint && hint.ordinal !== null) return starts[hint.ordinal] ?? null;
+  return starts.length === 1 ? starts[0] : null;
 }
 
 /**
  * The copy of `needle` that ends at the caret, for a rich editor. Called
  * right after inserting, when the caret sits at the end of what went in.
- * Null when the caret is not there — the hint is then simply not available.
  */
 export function locateAtCaret(root: HTMLElement, needle: string): OccurrenceHint | null {
   const wanted = stripIgnorable(needle);
   if (!wanted) return null;
 
+  const starts = occurrencesOf(readComposerText(root), wanted);
+
   const doc = root.ownerDocument ?? document;
   const selection = doc.defaultView?.getSelection();
   const focusNode = selection?.focusNode;
-  if (!selection || !focusNode || !root.contains(focusNode)) return null;
+  if (!selection || !focusNode || !root.contains(focusNode)) return hintFor(starts, -1);
 
   let caret: number;
   try {
@@ -140,23 +177,17 @@ export function locateAtCaret(root: HTMLElement, needle: string): OccurrenceHint
     before.setEnd(focusNode, selection.focusOffset);
     caret = stripIgnorable(before.toString()).length;
   } catch {
-    return null;
+    return hintFor(starts, -1);
   }
 
-  const starts = occurrencesOf(readComposerText(root), wanted);
-  const ordinal = starts.indexOf(caret - wanted.length);
-  return ordinal < 0 ? null : { ordinal, total: starts.length };
+  return hintFor(starts, starts.indexOf(caret - wanted.length));
 }
 
 /**
  * The range covering `needle` inside a rich editor, or null when it cannot be
  * told which text is meant.
  *
- * Without a hint the text has to be there exactly once. With one, the copy it
- * names is used — provided the number of copies is still what it was when the
- * hint was taken. If a copy has come or gone since, there is no telling which
- * one is ours, and guessing could restore an original into text the user
- * protected with an earlier paste.
+ * Which copy is chosen follows `pickOccurrence`.
  *
  * The range runs from the first to the last non-ignorable character of the
  * needle, so whitespace around the inserted text is left in place. Callers
@@ -171,17 +202,8 @@ export function findTextRange(
   if (!wanted) return null;
 
   const { flat, nodes, offsets } = flattenTextNodes(root);
-  const starts = occurrencesOf(flat, wanted);
-  let first: number;
-  if (hint) {
-    if (hint.total !== starts.length || hint.ordinal < 0 || hint.ordinal >= starts.length) {
-      return null;
-    }
-    first = starts[hint.ordinal];
-  } else {
-    if (starts.length !== 1) return null;
-    first = starts[0];
-  }
+  const first = pickOccurrence(occurrencesOf(flat, wanted), hint);
+  if (first === null) return null;
 
   const last = first + wanted.length - 1;
   const range = (root.ownerDocument ?? document).createRange();
