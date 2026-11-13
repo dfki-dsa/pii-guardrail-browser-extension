@@ -147,7 +147,7 @@ describe('createAppModels — automatic replacement', () => {
     const app = createAppModels();
     await flushInit();
 
-    expect(get(app.settings.autoReplace)).toBe(false);
+    expect(get(app.settings.autoMode)).toBe(false);
   });
 
   test('reflects a profile that already opted in', async () => {
@@ -156,7 +156,7 @@ describe('createAppModels — automatic replacement', () => {
     const app = createAppModels();
     await flushInit();
 
-    expect(get(app.settings.autoReplace)).toBe(true);
+    expect(get(app.settings.autoMode)).toBe(true);
   });
 
   test('saves the mode and tells open pages, in both directions', async () => {
@@ -165,10 +165,10 @@ describe('createAppModels — automatic replacement', () => {
     const app = createAppModels();
     await flushInit();
 
-    await app.settings.setAutoReplace(true);
+    await app.settings.setAutoMode(true);
 
     expect((h.store[SETTINGS_KEY] as Settings).pasteReviewMode).toBe('auto');
-    expect(get(app.settings.autoReplace)).toBe(true);
+    expect(get(app.settings.autoMode)).toBe(true);
     expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
       7,
       expect.objectContaining({
@@ -177,10 +177,10 @@ describe('createAppModels — automatic replacement', () => {
       }),
     );
 
-    await app.settings.setAutoReplace(false);
+    await app.settings.setAutoMode(false);
 
     expect((h.store[SETTINGS_KEY] as Settings).pasteReviewMode).toBe('review');
-    expect(get(app.settings.autoReplace)).toBe(false);
+    expect(get(app.settings.autoMode)).toBe(false);
   });
 });
 

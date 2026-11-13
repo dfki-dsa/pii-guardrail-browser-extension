@@ -10,7 +10,6 @@
 		minConfidence,
 		debug,
 		clipboardInterceptEnabled,
-		autoReplace,
 		nerModel,
 		nerModelChoice,
 		nerModelChoices,
@@ -20,7 +19,6 @@
 		setMinConfidence,
 		setDebug,
 		setClipboardInterceptEnabled,
-		setAutoReplace,
 		setNerModelChoice,
 		openOptions,
 		openIssueReport,
@@ -35,7 +33,6 @@
 		minConfidence: Writable<number>;
 		debug: Writable<boolean>;
 		clipboardInterceptEnabled: Writable<boolean>;
-		autoReplace: Writable<boolean>;
 		nerModel: Writable<NerModelKey>;
 		nerModelChoice: Writable<string>;
 		nerModelChoices: readonly NerModelChoice[];
@@ -45,7 +42,6 @@
 		setMinConfidence: (value: number) => Promise<void>;
 		setDebug: (enabled: boolean) => Promise<void>;
 		setClipboardInterceptEnabled: (enabled: boolean) => Promise<void>;
-		setAutoReplace: (enabled: boolean) => Promise<void>;
 		setNerModelChoice: (value: string) => Promise<void>;
 		openOptions: () => void;
 		openIssueReport: () => void;
@@ -88,8 +84,6 @@
 
 	<article class="card">
 		<div class="head"><span>Behavior</span></div>
-		<div class="row"><div><div class="row-label">Auto-replace</div><div class="row-meta">Replace detected items on paste without the review pop-up. You can undo or review from the notice that appears. Detection can miss things, so check the text before you send.</div></div><Toggle size="sm" checked={$autoReplace} onchange={(checked) => setAutoReplace(checked)} label="Auto-replace" /></div>
-		<div class="divider"></div>
 		<div class="row"><div><div class="row-label">Intercept copy</div><div class="row-meta">Offer to restore originals when you copy replaced text. Paste review follows the master protection toggle.</div></div><Toggle size="sm" checked={$clipboardInterceptEnabled} onchange={(checked) => setClipboardInterceptEnabled(checked)} label="Intercept copy" /></div>
 		<div class="divider"></div>
 		<div class="row"><div><div class="row-label">Debug mode</div><div class="row-meta">Verbose logging in console</div></div><Toggle size="sm" checked={$debug} onchange={(checked) => setDebug(checked)} label="Debug mode" /></div>

@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import {
   findInFormControl,
   findTextRange,
+  locateAtCaret,
+  occurrencesOf,
   readComposerText,
   stripIgnorable,
   trimIgnorable,
@@ -141,6 +143,69 @@ describe('findTextRange', () => {
     const el = richComposer('<p>anything</p>');
 
     expect(findTextRange(el, ' \n ')).toBeNull();
+  });
+});
+
+describe('occurrencesOf', () => {
+  it('lists where each copy starts, without overlaps', () => {
+    expect(occurrencesOf('abXabXab', 'ab')).toEqual([0, 3, 6]);
+    expect(occurrencesOf('aaaa', 'aa')).toEqual([0, 2]);
+    expect(occurrencesOf('abc', 'x')).toEqual([]);
+    expect(occurrencesOf('abc', '')).toEqual([]);
+  });
+});
+
+describe('telling two copies of the same paste apart', () => {
+  /** Put the caret at the end of `node`, where it sits after an insert. */
+  function caretAfter(node: Node): void {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  it('names the copy that ends at the caret', () => {
+    const el = richComposer(`${paragraphs(INSERTED)}<p>between</p>${paragraphs(INSERTED)}`);
+    const blocks = el.querySelectorAll('p');
+
+    caretAfter(blocks[blocks.length - 1]);
+    expect(locateAtCaret(el, INSERTED)).toEqual({ ordinal: 1, total: 2 });
+
+    // The first copy ends just before the paragraph typed in between.
+    const between = Array.from(blocks).find((p) => p.textContent === 'between')!;
+    caretAfter(between.previousElementSibling!);
+    expect(locateAtCaret(el, INSERTED)).toEqual({ ordinal: 0, total: 2 });
+  });
+
+  it('has no answer when the caret is not at the end of a copy, or is elsewhere', () => {
+    const el = richComposer(`${paragraphs(INSERTED)}<p>typed after</p>`);
+    caretAfter(el.lastElementChild!);
+    expect(locateAtCaret(el, INSERTED)).toBeNull();
+
+    const outside = document.createElement('p');
+    outside.textContent = 'elsewhere';
+    document.body.append(outside);
+    caretAfter(outside);
+    expect(locateAtCaret(el, INSERTED)).toBeNull();
+  });
+
+  it('finds the named copy, and only while the number of copies is unchanged', () => {
+    const el = richComposer(`${paragraphs(INSERTED)}<p>between</p>${paragraphs(INSERTED)}`);
+
+    const second = findTextRange(el, INSERTED, { ordinal: 1, total: 2 })!;
+    expect(second).not.toBeNull();
+    // It is the later copy: everything typed in between lies before it.
+    const before = document.createRange();
+    before.selectNodeContents(el);
+    before.setEnd(second.startContainer, second.startOffset);
+    expect(before.toString()).toContain('between');
+
+    // A copy has gone since the hint was taken: no telling which is left.
+    el.lastElementChild!.remove();
+    expect(findTextRange(el, INSERTED, { ordinal: 1, total: 2 })).toBeNull();
+    expect(findTextRange(el, INSERTED, { ordinal: 5, total: 1 })).toBeNull();
   });
 });
 

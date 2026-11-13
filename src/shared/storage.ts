@@ -88,7 +88,12 @@ function normalizeBlocklist(raw: unknown): BlocklistEntry[] {
   );
 }
 
-function normalizeSettings(raw: unknown): Settings {
+/**
+ * Settings as this version understands them: defaults filled in, anything
+ * invalid reset. Also for callers handed a settings object by a storage or
+ * runtime event, which arrives exactly as it was written.
+ */
+export function normalizeSettings(raw: unknown): Settings {
   const candidate = raw && typeof raw === 'object' ? raw as Partial<Settings> : {};
   const settings = { ...DEFAULT_SETTINGS, ...candidate };
   if (typeof settings.minConfidence !== 'number' || settings.minConfidence <= 0 || settings.minConfidence > 1) {

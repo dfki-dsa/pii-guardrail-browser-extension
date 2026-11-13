@@ -16,11 +16,21 @@ import ReviewOverlayComponent from './ReviewOverlay.svelte';
 import {
   OverlayModel,
   type OverlayCallbacks,
+  type OverlayOptions,
   type PreviewResolver,
   type PreviewResolverFactory,
 } from './overlay-model';
 
+import { anchorShiftX } from '../shared/anchored-position';
+
 export type { OverlayCallbacks, PreviewResolver, PreviewResolverFactory };
+
+/** Controls that give Enter a meaning of their own when focused. */
+const INTERACTIVE_CONTROLS =
+  'button, a[href], input, select, textarea, [role="switch"], [role="button"], [contenteditable]';
+
+/** Gap the dialog keeps to the window's edge when it moves toward the chat. */
+const DIALOG_EDGE_GAP_PX = 24;
 
 /**
  * Shadow DOM overlay for reviewing and correcting PII detections.
@@ -40,6 +50,8 @@ export class ReviewOverlay {
   // and pass it back to unmount() during destroy().
   private app: ReturnType<typeof mount> | null = null;
   private keyboardHandler: ((e: KeyboardEvent) => void) | null = null;
+  private resizeHandler: (() => void) | null = null;
+  private anchor: HTMLElement | null = null;
 
   constructor(
     originalText: string,
@@ -49,6 +61,7 @@ export class ReviewOverlay {
     timings?: { totalMs: number },
     _theme: 'dark' | 'light' = 'dark',
     previewResolverFactory?: PreviewResolverFactory,
+    options: OverlayOptions = {},
   ) {
     void _theme; // intentionally unused — single-style overlay.
 
@@ -79,6 +92,7 @@ export class ReviewOverlay {
       confidenceThreshold,
       timings,
       previewResolverFactory,
+      options,
     );
 
     this.host = document.createElement('div');
@@ -97,13 +111,43 @@ export class ReviewOverlay {
     this.attachKeyboardShortcuts();
   }
 
-  /** Show the overlay in the DOM. */
-  show(): void {
+  /**
+   * Show the overlay in the DOM.
+   *
+   * `anchor` is the message box the paste was aimed at. The backdrop still
+   * covers the whole window, but the dialog moves toward the anchor so it
+   * sits over the conversation rather than half over the site's sidebar.
+   */
+  show(anchor: HTMLElement | null = null): void {
+    this.anchor = anchor;
     document.body.appendChild(this.host);
+    this.alignWithAnchor();
+    this.resizeHandler = () => this.alignWithAnchor();
+    window.addEventListener('resize', this.resizeHandler);
+  }
+
+  /**
+   * Shift the dialog sideways, toward the anchor.
+   *
+   * The amount is handed to the stylesheet as a custom property, which
+   * applies it with `translate`. That composes with the entrance
+   * animation's `transform` instead of fighting it, leaves the dialog's
+   * layout — and so its measured width — untouched, and keeps how the
+   * dialog is laid out a matter for the stylesheet alone.
+   */
+  private alignWithAnchor(): void {
+    const dialog = this.shadow.querySelector<HTMLElement>('.pg-overlay');
+    if (!dialog) return;
+    const shift = anchorShiftX(dialog.offsetWidth, this.anchor, DIALOG_EDGE_GAP_PX);
+    this.host.style.setProperty('--pg-anchor-shift', `${shift}px`);
   }
 
   /** Remove the overlay from the DOM. Idempotent. */
   destroy(): void {
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+      this.resizeHandler = null;
+    }
     if (this.keyboardHandler) {
       document.removeEventListener('keydown', this.keyboardHandler);
       this.keyboardHandler = null;
@@ -121,12 +165,33 @@ export class ReviewOverlay {
     }
   }
 
+  /**
+   * Whether keyboard focus is on an interactive control inside the pop-up.
+   *
+   * Asked of the shadow root because the listener sits on the document, where
+   * an event from inside a closed shadow tree is retargeted to the host and
+   * says nothing about which control it came from.
+   */
+  private focusIsOnControl(): boolean {
+    const focused = this.shadow.activeElement;
+    return (
+      !!focused &&
+      typeof focused.matches === 'function' &&
+      focused.matches(INTERACTIVE_CONTROLS)
+    );
+  }
+
   private attachKeyboardShortcuts(): void {
     this.keyboardHandler = (e: KeyboardEvent) => {
       if (this.model.isDestroyed()) return;
       if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter confirms the pop-up — unless the user has moved focus onto one
+        // of its controls. Then Enter belongs to that control: taking it here
+        // would make Enter on "Restore original" do the opposite, and Enter
+        // on the auto-mode switch paste instead of switching.
+        if (this.focusIsOnControl()) return;
         e.preventDefault();
-        this.model.confirm();
+        this.model.primary();
       }
       if (e.key === 'Escape') {
         e.preventDefault();

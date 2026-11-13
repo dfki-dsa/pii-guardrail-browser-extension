@@ -39,7 +39,7 @@ npm run test:e2e:harness
 
 ## Was geprüft wird
 
-Alle Anbieter durchlaufen denselben Vertrag mit Mustererkennung: abgemeldete Oberfläche, unabhängige Composer-Suche, echter System-Clipboard-Paste, Review, „Replace & paste“, bereinigte Nutzernachricht und echte Anbieterantwort. ChatGPT prüft zusätzlich Wiederherstellung, direktes Kopieren, Clipboard-Toast, Navigation zu einer neuen Unterhaltung und einmalig die Local-AI-Erkennung.
+Alle Anbieter durchlaufen denselben Vertrag mit Mustererkennung: abgemeldete Oberfläche, unabhängige Composer-Suche, echter System-Clipboard-Paste, Review, „Replace and paste“, bereinigte Nutzernachricht und echte Anbieterantwort. ChatGPT prüft zusätzlich Wiederherstellung, direktes Kopieren, Clipboard-Toast, Navigation zu einer neuen Unterhaltung und einmalig die Local-AI-Erkennung.
 
 Die Suite verwendet ausschließlich synthetische, pro Lauf eindeutige Werte aus reservierten Beispielnamensräumen. Ein unbekannter Dialog, eine Login-Wall oder ein CAPTCHA wird nicht bestätigt, sondern als `unavailable` ausgewiesen.
 

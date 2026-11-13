@@ -14,26 +14,23 @@
  * the user a convenience, never their protection.
  */
 
-/** Whitespace of every kind, plus the zero-width filler editors leave behind. */
-const IGNORABLE = /[\s​﻿]/;
+/**
+ * Whitespace of every kind, plus the zero-width filler editors leave behind.
+ * Written with escapes: the two zero-width characters are invisible in source.
+ */
+const IGNORABLE_CLASS = '[\\s\\u200B\\uFEFF]';
+const IGNORABLE = new RegExp(IGNORABLE_CLASS);
+const IGNORABLE_RUNS = new RegExp(`${IGNORABLE_CLASS}+`, 'g');
+const IGNORABLE_EDGES = new RegExp(`^${IGNORABLE_CLASS}+|${IGNORABLE_CLASS}+$`, 'g');
 
-/** `text` with everything `IGNORABLE` removed — the form texts are compared in. */
+/** `text` with everything ignorable removed — the form texts are compared in. */
 export function stripIgnorable(text: string): string {
-  let out = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (!IGNORABLE.test(ch)) out += ch;
-  }
-  return out;
+  return text.replace(IGNORABLE_RUNS, '');
 }
 
 /** `text` without leading and trailing ignorable characters. */
 export function trimIgnorable(text: string): string {
-  let start = 0;
-  let end = text.length;
-  while (start < end && IGNORABLE.test(text[start])) start++;
-  while (end > start && IGNORABLE.test(text[end - 1])) end--;
-  return text.slice(start, end);
+  return text.replace(IGNORABLE_EDGES, '');
 }
 
 /** A `<textarea>` reports its value with bare `\n` line ends whatever went in. */
@@ -99,22 +96,92 @@ function flattenTextNodes(root: Node): {
   return { flat, nodes, offsets };
 }
 
+/** Where each non-overlapping copy of `wanted` starts in `flat`. */
+export function occurrencesOf(flat: string, wanted: string): number[] {
+  const starts: number[] = [];
+  if (!wanted) return starts;
+  for (let at = flat.indexOf(wanted); at >= 0; at = flat.indexOf(wanted, at + wanted.length)) {
+    starts.push(at);
+  }
+  return starts;
+}
+
 /**
- * The range covering `needle` inside a rich editor, or null when it is not
- * there exactly once.
+ * Which copy of some inserted text is the one this extension put there:
+ * copy number `ordinal` (from zero) of `total` in the composer.
+ *
+ * Needed because a user can paste the same thing twice. An ordinal survives
+ * typing elsewhere in the draft, which an offset would not; `total` is kept so
+ * that a copy added or removed since makes the hint void rather than wrong.
+ */
+export interface OccurrenceHint {
+  ordinal: number;
+  total: number;
+}
+
+/**
+ * The copy of `needle` that ends at the caret, for a rich editor. Called
+ * right after inserting, when the caret sits at the end of what went in.
+ * Null when the caret is not there — the hint is then simply not available.
+ */
+export function locateAtCaret(root: HTMLElement, needle: string): OccurrenceHint | null {
+  const wanted = stripIgnorable(needle);
+  if (!wanted) return null;
+
+  const doc = root.ownerDocument ?? document;
+  const selection = doc.defaultView?.getSelection();
+  const focusNode = selection?.focusNode;
+  if (!selection || !focusNode || !root.contains(focusNode)) return null;
+
+  let caret: number;
+  try {
+    const before = doc.createRange();
+    before.selectNodeContents(root);
+    before.setEnd(focusNode, selection.focusOffset);
+    caret = stripIgnorable(before.toString()).length;
+  } catch {
+    return null;
+  }
+
+  const starts = occurrencesOf(readComposerText(root), wanted);
+  const ordinal = starts.indexOf(caret - wanted.length);
+  return ordinal < 0 ? null : { ordinal, total: starts.length };
+}
+
+/**
+ * The range covering `needle` inside a rich editor, or null when it cannot be
+ * told which text is meant.
+ *
+ * Without a hint the text has to be there exactly once. With one, the copy it
+ * names is used — provided the number of copies is still what it was when the
+ * hint was taken. If a copy has come or gone since, there is no telling which
+ * one is ours, and guessing could restore an original into text the user
+ * protected with an earlier paste.
  *
  * The range runs from the first to the last non-ignorable character of the
  * needle, so whitespace around the inserted text is left in place. Callers
  * swapping text in should trim the new text the same way (`trimIgnorable`).
  */
-export function findTextRange(root: HTMLElement, needle: string): Range | null {
+export function findTextRange(
+  root: HTMLElement,
+  needle: string,
+  hint?: OccurrenceHint | null,
+): Range | null {
   const wanted = stripIgnorable(needle);
   if (!wanted) return null;
 
   const { flat, nodes, offsets } = flattenTextNodes(root);
-  const first = flat.indexOf(wanted);
-  if (first < 0) return null;
-  if (flat.indexOf(wanted, first + 1) >= 0) return null;
+  const starts = occurrencesOf(flat, wanted);
+  let first: number;
+  if (hint) {
+    if (hint.total !== starts.length || hint.ordinal < 0 || hint.ordinal >= starts.length) {
+      return null;
+    }
+    first = starts[hint.ordinal];
+  } else {
+    if (starts.length !== 1) return null;
+    first = starts[0];
+  }
 
   const last = first + wanted.length - 1;
   const range = (root.ownerDocument ?? document).createRange();
@@ -129,5 +196,7 @@ export function readComposerText(element: HTMLElement): string {
   if (tag === 'TEXTAREA' || tag === 'INPUT') {
     return stripIgnorable((element as HTMLTextAreaElement | HTMLInputElement).value);
   }
-  return flattenTextNodes(element).flat;
+  // The same string a walk over the text nodes would build, without
+  // building the node and offset maps only `findTextRange` needs.
+  return stripIgnorable(element.textContent ?? '');
 }

@@ -49,6 +49,9 @@ export interface ClipboardInterceptorOptions {
   /** Whether the feature is currently enabled. Updated via
    *  {@link setEnabled}. */
   enabled?: boolean;
+  /** The page's message box, asked for each time a toast is shown, so the
+   *  toast lines up with the chat instead of the middle of the window. */
+  anchor?: () => HTMLElement | null;
 }
 
 /** Function that performs the actual clipboard replacement when the
@@ -58,6 +61,7 @@ type ReplaceFn = (deAnonText: string) => void;
 
 export class ClipboardInterceptor {
   private resolve: ResolveCallback;
+  private anchor: () => HTMLElement | null;
   private theme: 'dark' | 'light';
   private enabled: boolean;
   private toast: ClipboardToast | null = null;
@@ -72,6 +76,7 @@ export class ClipboardInterceptor {
 
   constructor(opts: ClipboardInterceptorOptions) {
     this.resolve = opts.resolve;
+    this.anchor = opts.anchor ?? (() => null);
     this.theme = opts.theme ?? 'dark';
     this.enabled = opts.enabled ?? true;
   }
@@ -144,7 +149,7 @@ export class ClipboardInterceptor {
       onDispose: () => {
         this.toast = null;
       },
-    });
+    }, this.anchor());
     this.toast.show();
   }
 

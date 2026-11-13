@@ -1,4 +1,4 @@
-import type { PiiSpan } from './message-types';
+import type { PasteReviewMode, PiiSpan, Settings } from './message-types';
 
 /**
  * The review pop-up's default selection, in one place.
@@ -19,4 +19,20 @@ export function selectDefaultApproved(
   thresholdFor: (span: PiiSpan) => number,
 ): PiiSpan[] {
   return spans.filter((span) => isApprovedByDefault(span, thresholdFor(span)));
+}
+
+/**
+ * Whether auto-mode is on.
+ *
+ * Compared against the one value that opts in, so that anything else —
+ * settings not loaded yet, a value this version does not know — means the
+ * review pop-up is shown.
+ */
+export function isAutoMode(settings: Pick<Settings, 'pasteReviewMode'> | null | undefined): boolean {
+  return settings?.pasteReviewMode === 'auto';
+}
+
+/** The setting value for an auto-mode switch that is on or off. */
+export function pasteReviewModeFor(autoMode: boolean): PasteReviewMode {
+  return autoMode ? 'auto' : 'review';
 }

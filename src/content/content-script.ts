@@ -24,20 +24,25 @@ import {
   visibleTokens,
 } from './transcript-scan';
 import { isInEditableRegion } from '../ui/shared/editable-region';
+import { centerOverAnchor } from '../ui/shared/anchored-position';
 import { ClipboardInterceptor } from './clipboard-interceptor';
 import { ReviewOverlay } from '../ui/overlay/overlay';
-import type { OverlayCallbacks } from '../ui/overlay/overlay-model';
-import {
-  AutoReplaceToast,
-  AUTO_REPLACE_UNDO_FAILED_MESSAGE,
-} from '../ui/auto-replace-toast/auto-replace-toast';
+import type { OverlayCallbacks, OverlayContext } from '../ui/overlay/overlay-model';
+import { AutoModeController, type ReviewOutcomeCallbacks, type Timings } from './auto-mode';
+import { replacedItemsLabel } from '../ui/auto-mode-toast/auto-mode-toast';
+import { isAutoMode, pasteReviewModeFor } from '../shared/review-defaults';
+import { TurnBannerKeeper } from './turn-banners';
 import { ScanningIndicator } from '../ui/scanning-indicator/scanning-indicator';
 import { CancelDecisionDialog } from '../ui/cancel-decision-dialog/cancel-decision-dialog';
 import { CriticalLocalAiModal } from '../ui/critical-local-ai-modal/critical-local-ai-modal';
 import { PageStatusChip } from '../ui/page-status-chip/page-status-chip';
 import { chipReasonMessageForStatus, deriveChipReason } from '../shared/page-status-chip-reason';
 import { SYSTEM_CHECK_STORAGE_KEY } from '../shared/system-check-storage';
-import { attachDeAnonBanner, type AttachedBanner } from '../ui/banner/de-anon-banner';
+import {
+  attachDeAnonBanner,
+  hasLiveBanner,
+  type AttachedBanner,
+} from '../ui/banner/de-anon-banner';
 import { anonymize, anonymizeWithVault } from '../shared/anonymizer';
 import { EntityMap } from '../shared/entity-map';
 import {
@@ -47,6 +52,7 @@ import {
 } from '../shared/conversation-scope';
 import {
   loadSettings,
+  normalizeSettings,
   saveSettings,
   loadConversationRecord,
   saveConversationTokens,
@@ -79,7 +85,6 @@ import {
 } from '../shared/feedback';
 import { prepareReviewSpans } from './review-spans';
 import { resolveThreshold } from '../shared/sensitivity-resolver';
-import { selectDefaultApproved } from '../shared/review-defaults';
 import { CONVERSATION_URL_POLL_MS, LOCAL_AI_ACTIVITY_HEARTBEAT_MS, NO_PII_INDICATOR_MS, RESPONSE_DEBOUNCE_MS, CHIP_FADE_MS } from '../shared/constants';
 import type { PiiSpan, FeedbackEntry, Settings, AllowlistEntry, CancelDetectionBehavior, NerStatus, NerStatusResponse, SystemCompatibilityStatus, SystemCompatibilityStatusResponse } from '../shared/message-types';
 
@@ -331,6 +336,14 @@ async function refreshSystemStatusFromBackground(): Promise<void> {
  */
 const INIT_FAILURE_INDICATOR_MS = 8000;
 
+/**
+ * The message box floating notices line up with. Null early in a page's
+ * life, in which case notices fall back to the middle of the window.
+ */
+function noticeAnchor(): HTMLElement | null {
+  return interceptor.composerElement();
+}
+
 function showIndicator(text: string, durationMs: number): void {
   const existing = document.getElementById('pg-indicator');
   if (existing) existing.remove();
@@ -357,6 +370,9 @@ function showIndicator(text: string, durationMs: number): void {
     transition: opacity 0.3s; pointer-events: none;
   `;
   document.body.appendChild(el);
+  // Over the message box, not the middle of the window: a sidebar moves the
+  // chat, and a notice about a paste belongs next to where it was pasted.
+  centerOverAnchor(el, noticeAnchor());
 
   setTimeout(() => {
     el.style.opacity = '0';
@@ -377,7 +393,7 @@ function watchConversationUrl(): void {
     if (next === conversationUrl) return;
     conversationUrl = next;
     // The message box the notice refers to has been sent or left behind.
-    dismissAutoReplaceToast();
+    autoMode.dismissNotice();
     void adoptConversation(next);
   };
 
@@ -452,6 +468,7 @@ function rebuildScope(): void {
     vault: identityVault,
     vaultEnabled: settings?.identityVaultEnabled ?? false,
   });
+  turnBanners.reset();
   refreshBanners();
 }
 
@@ -563,6 +580,7 @@ function attachLooseBanners(composer: HTMLElement | null, transcript: string): v
   const turns = adapter.getResponseElements();
   if (turns.length > 0) {
     detachLooseBanners();
+    attachTurnBanners(turns);
     return;
   }
 
@@ -580,6 +598,21 @@ function attachLooseBanners(composer: HTMLElement | null, transcript: string): v
   for (const anchor of anchors) {
     attachBanner(anchor, false);
   }
+}
+
+/**
+ * Puts a banner back on any recognised reply that should have one and does
+ * not; see `turn-banners.ts` for why the response observer alone is not
+ * enough, and for how it avoids re-reading every reply on every scan.
+ */
+const turnBanners = new TurnBannerKeeper({
+  hasLiveBanner,
+  mightResolve: (text) => scope.mightResolve(text),
+  attach: (element) => attachBanner(element, true),
+});
+
+function attachTurnBanners(turns: readonly HTMLElement[]): void {
+  if (scope.size > 0) turnBanners.reconcile(turns);
 }
 
 function detachLooseBanners(): void {
@@ -610,7 +643,13 @@ function attachBanner(element: HTMLElement, onMatchedTurn: boolean): boolean {
     readFormControls: onMatchedTurn,
   });
   if (!banner) return false;
+  // A reply whose banner the site removed gets a new one; the handle of the
+  // lost one must not stay behind to be refreshed alongside it.
+  for (let i = attachedBanners.length - 1; i >= 0; i--) {
+    if (attachedBanners[i].banner.element === element) attachedBanners.splice(i, 1);
+  }
   attachedBanners.push({ banner, loose: !onMatchedTurn });
+  if (onMatchedTurn) turnBanners.noteAttached(element);
   return true;
 }
 
@@ -632,10 +671,8 @@ function refreshBanners(): void {
     banner.refresh();
   }
 
-  if (scope.size === 0) return;
-  for (const element of adapter.getResponseElements()) {
-    attachBanner(element, true);
-  }
+  // `rebuildScope` reset the keeper first, so this looks at every reply.
+  attachTurnBanners(adapter.getResponseElements());
 }
 
 /**
@@ -786,6 +823,14 @@ function anonymizeApproved(originalText: string, approvedSpans: PiiSpan[]): stri
   return result.text;
 }
 
+/** The replacement tokens known to this page that appear in `text`. */
+function emittedTokens(text: string): string[] {
+  return visibleTokens(
+    Array.from(entityMap.entries(), ([replacement]) => replacement),
+    text,
+  );
+}
+
 /**
  * Record what this session put into the page, after `anonymizedText` went
  * into the message box. The reveal banner, copy restore and conversation
@@ -795,10 +840,8 @@ function recordReplacement(anonymizedText: string): void {
   // The map may also hold entries restored from storage — on the shared
   // "new chat" key those can belong to another tab's draft — and those are
   // not ours to persist or file.
-  for (const [replacement] of entityMap.entries()) {
-    if (anonymizedText.includes(replacement)) {
-      sessionPlaceholders.add(replacement);
-    }
+  for (const replacement of emittedTokens(anonymizedText)) {
+    sessionPlaceholders.add(replacement);
   }
 
   // The ledger just grew, so what may be resolved on this page grew
@@ -806,12 +849,6 @@ function recordReplacement(anonymizedText: string): void {
   rebuildScope();
   void recordEmittedTokens();
 }
-
-/** What the review pop-up decides about the paste itself. */
-type ReviewOutcomeCallbacks = Pick<
-  OverlayCallbacks,
-  'onConfirm' | 'onPasteOriginal' | 'onCancel'
->;
 
 /**
  * Open the review pop-up. Feedback, allowlisting and "edit details" behave
@@ -821,8 +858,9 @@ type ReviewOutcomeCallbacks = Pick<
 function openReviewOverlay(
   originalText: string,
   spans: PiiSpan[],
-  timings: { totalMs: number } | undefined,
+  timings: Timings,
   outcome: ReviewOutcomeCallbacks,
+  context: OverlayContext,
 ): void {
   const overlay = new ReviewOverlay(
     originalText,
@@ -867,6 +905,16 @@ function openReviewOverlay(
         const url = chrome.runtime.getURL(`options/options.html?allowlist=${encodeURIComponent(text)}`);
         sendRuntimeMessageBestEffort({ type: 'OPEN_OPTIONS_PAGE', payload: { url } });
       },
+
+      // "Auto-mode". Saved straight away: it is the same setting as
+      // the toggle in the extension popup, offered here because
+      // this is where a user finds out they want it.
+      onSetAutoMode: (enabled: boolean) => {
+        const pasteReviewMode = pasteReviewModeFor(enabled);
+        settings = { ...settings, pasteReviewMode };
+        void saveSettings({ pasteReviewMode });
+        dismissNoticeIfAutoModeLeft();
+      },
     },
     (span: PiiSpan) => resolveThreshold(settings, span.entity_type),
     timings,
@@ -874,9 +922,10 @@ function openReviewOverlay(
     settings.identityVaultEnabled
       ? makePreviewResolverFactory(identityVault, settings.defaultReplacementMode)
       : undefined,
+    { context, autoMode: isAutoMode(settings) },
   );
 
-  overlay.show();
+  overlay.show(noticeAnchor());
 }
 
 /**
@@ -897,11 +946,9 @@ function handleDetectedPii(
     return;
   }
 
-  // Read at decision time, and compared against the one value that opts in:
-  // a settings object arriving through `storage.onChanged` is not normalised,
-  // so anything unexpected here has to mean "review".
-  if (settings?.pasteReviewMode === 'auto') {
-    replaceAutomatically(originalText, spans, timings);
+  // Read at decision time: the user may have switched since the paste began.
+  if (isAutoMode(settings)) {
+    autoMode.replace(originalText, spans, timings);
     return;
   }
 
@@ -916,10 +963,7 @@ function handleDetectedPii(
       interceptor.pasteAnonymized(anonymizedText);
       recordReplacement(anonymizedText);
 
-      showIndicator(
-        `\u{1F512} ${approvedSpans.length} item(s) replaced`,
-        CHIP_FADE_MS,
-      );
+      showIndicator(`\u{1F512} ${replacedItemsLabel(approvedSpans.length)}`, CHIP_FADE_MS);
 
       if (settings.debug && timings) {
         console.log(`[PG:content] Detection: ${timings.totalMs}ms, anonymized ${approvedSpans.length} spans`);
@@ -940,146 +984,38 @@ function handleDetectedPii(
         }
       });
     },
-  });
+  }, 'paste');
 }
 
-// --- Automatic replacement ---
-
-/** A paste that was replaced without review, kept so it can be undone or reviewed. */
-interface AutoReplacement {
-  originalText: string;
-  /** Every span the pop-up would have listed, not only the ones replaced. */
-  spans: PiiSpan[];
-  /** The text that went into the message box. */
-  inserted: string;
-  timings?: { totalMs: number };
-}
-
-let autoReplaceToast: AutoReplaceToast | null = null;
-
-function dismissAutoReplaceToast(): void {
-  autoReplaceToast?.dispose();
-  autoReplaceToast = null;
-}
-
-/** The notice belongs to automatic replacement; it goes when that is switched off. */
-function dismissAutoReplaceToastIfModeLeft(): void {
-  if (!settings?.enabled || settings.pasteReviewMode !== 'auto') {
-    dismissAutoReplaceToast();
-  }
-}
-
-const SWAP_FAILED_INDICATOR_MS = 5000;
+// --- Auto-mode ---
 
 /**
- * Replace what the review pop-up would have pre-selected, without showing it,
- * then offer Undo and Review from a short-lived notice.
+ * Auto-mode itself lives in `auto-mode.ts`, where it can be tested. This is
+ * only what it needs from here. The closures matter: `interceptor` and
+ * `settings` are not set yet when this line runs.
  */
-function replaceAutomatically(
-  originalText: string,
-  spans: PiiSpan[],
-  timings?: { totalMs: number },
-): void {
-  const approved = selectDefaultApproved(
-    spans,
-    (span) => resolveThreshold(settings, span.entity_type),
-  );
+const autoMode = new AutoModeController({
+  composer: {
+    insert: (text) => interceptor.pasteAnonymized(text),
+    replaceInserted: (oldText, newText) => interceptor.replaceInserted(oldText, newText),
+    composerContainsAny: (texts) => interceptor.composerContainsAny(texts),
+    composerElement: noticeAnchor,
+  },
+  theme: () => settings?.theme ?? 'dark',
+  thresholdFor: (span) => resolveThreshold(settings, span.entity_type),
+  anonymize: anonymizeApproved,
+  tokensIn: emittedTokens,
+  record: recordReplacement,
+  openReview: openReviewOverlay,
+  indicate: showIndicator,
+  debug: (message) => {
+    if (settings?.debug) console.log(`[PG:content] ${message}`);
+  },
+});
 
-  if (approved.length === 0) {
-    // Everything left is something the pop-up would have shown unticked —
-    // inside a code block the user asked to skip, or below its threshold.
-    showIndicator(
-      `✓ Pasted — ${spans.length} detected item(s) left unchanged`,
-      NO_PII_INDICATOR_MS,
-    );
-    interceptor.pasteOriginal(originalText);
-    return;
-  }
-
-  const anonymizedText = anonymizeApproved(originalText, approved);
-  const landed = interceptor.pasteAnonymized(anonymizedText);
-  recordReplacement(anonymizedText);
-
-  if (settings.debug && timings) {
-    console.log(`[PG:content] Detection: ${timings.totalMs}ms, auto-anonymized ${approved.length} spans`);
-  }
-
-  // No message box to land in: already reported through the composer lookup,
-  // and there is nothing on the page to undo or review.
-  if (!landed) return;
-
-  showAutoReplaceToast(
-    { originalText, spans, inserted: anonymizedText, timings },
-    approved.length,
-  );
-}
-
-function showAutoReplaceToast(replacement: AutoReplacement, count: number): void {
-  dismissAutoReplaceToast();
-  const toast = new AutoReplaceToast(settings.theme, count, {
-    onUndo: () => interceptor.replaceInserted(replacement.inserted, replacement.originalText),
-    onReview: () => reviewAutoReplacement(replacement),
-    onDispose: () => {
-      if (autoReplaceToast === toast) autoReplaceToast = null;
-    },
-  });
-  autoReplaceToast = toast;
-  toast.show();
-}
-
-/**
- * Open the review pop-up for a paste that was already replaced.
- *
- * The replaced text stays in the message box while the pop-up is open and is
- * swapped only for what the user confirms. If it cannot be swapped — edited or
- * sent in the meantime — nothing changes and the user is told; closing the
- * pop-up keeps the automatic replacement.
- */
-function reviewAutoReplacement(replacement: AutoReplacement): void {
-  const { originalText, inserted } = replacement;
-
-  const restoreOriginal = async (): Promise<void> => {
-    const restored = await interceptor.replaceInserted(inserted, originalText);
-    if (restored) {
-      showIndicator('Original restored — nothing is replaced', NO_PII_INDICATOR_MS);
-    } else {
-      showIndicator(`⚠ ${AUTO_REPLACE_UNDO_FAILED_MESSAGE}`, SWAP_FAILED_INDICATOR_MS);
-    }
-  };
-
-  openReviewOverlay(originalText, replacement.spans, replacement.timings, {
-    onConfirm: (approvedSpans: PiiSpan[]) => {
-      if (approvedSpans.length === 0) {
-        void restoreOriginal();
-        return;
-      }
-
-      const anonymizedText = anonymizeApproved(originalText, approvedSpans);
-      void interceptor.replaceInserted(inserted, anonymizedText).then((swapped) => {
-        if (!swapped) {
-          showIndicator(
-            "⚠ Couldn't update the message — it was edited or sent. Nothing was changed.",
-            SWAP_FAILED_INDICATOR_MS,
-          );
-          return;
-        }
-        recordReplacement(anonymizedText);
-        showIndicator(
-          `\u{1F512} ${approvedSpans.length} item(s) replaced`,
-          CHIP_FADE_MS,
-        );
-      });
-    },
-
-    onPasteOriginal: () => {
-      void restoreOriginal();
-    },
-
-    onCancel: () => {
-      // Nothing was held back for this pop-up, so there is nothing to decide:
-      // the automatic replacement stays as it is.
-    },
-  });
+/** The notice belongs to auto-mode; it goes when that is switched off. */
+function dismissNoticeIfAutoModeLeft(): void {
+  if (!settings?.enabled || !isAutoMode(settings)) autoMode.dismissNotice();
 }
 
 // --- Paste interceptor ---
@@ -1119,11 +1055,11 @@ const interceptor = new PasteInterceptor(adapter, {
   onAnalyzing: () => {
     // A new paste supersedes the last one: its Undo would now be ambiguous
     // about which text it means.
-    dismissAutoReplaceToast();
+    autoMode.dismissNotice();
     scanningIndicator?.stop();
     scanningIndicator = new ScanningIndicator(settings.theme, () => {
       interceptor.cancelActiveDetection();
-    });
+    }, noticeAnchor());
     scanningIndicator.start();
   },
 
@@ -1191,6 +1127,7 @@ const responseObserver = new ResponseObserver(adapter, {
 
 const clipboardInterceptor = new ClipboardInterceptor({
   resolve: async (text: string) => scope.resolve(text),
+  anchor: noticeAnchor,
 });
 
 // --- Settings listener ---
@@ -1208,27 +1145,38 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse): undefined
   }
 
   if (message.type === 'SETTINGS_UPDATED') {
-    const vaultToggled = settings?.identityVaultEnabled !== message.payload.identityVaultEnabled;
-    settings = message.payload;
-    interceptor.setEnabled(settings.enabled);
-    dismissAutoReplaceToastIfModeLeft();
-    if (vaultToggled) void reloadVaultAndScope();
-    clipboardInterceptor.setTheme(settings.theme);
-    clipboardInterceptor.setEnabled(
-      settings.enabled && settings.clipboardInterceptEnabled,
-    );
-    if (!settings.enabled || settings.nerProvider === 'off') {
-      reportSupportedPageActivity(false, true);
-    } else {
-      reportVisibility();
-    }
-
-    if (settings.debug) {
-      console.log('[PG:content] Settings updated:', settings);
-    }
+    applySettings(message.payload, 'updated from the popup');
   }
   return undefined;
 });
+
+/**
+ * Take on settings that changed while the page is open.
+ *
+ * They arrive two ways — a message from the popup, a storage event from
+ * anywhere — and both hand over the object exactly as it was written. It is
+ * normalised here, once, so nothing that reads `settings` afterwards has to
+ * wonder whether a value is one this version knows.
+ */
+function applySettings(raw: unknown, how: string): void {
+  const next = normalizeSettings(raw);
+  const vaultToggled = settings?.identityVaultEnabled !== next.identityVaultEnabled;
+  settings = next;
+  interceptor.setEnabled(settings.enabled);
+  dismissNoticeIfAutoModeLeft();
+  if (vaultToggled) void reloadVaultAndScope();
+  clipboardInterceptor.setTheme(settings.theme);
+  clipboardInterceptor.setEnabled(settings.enabled && settings.clipboardInterceptEnabled);
+  pageStatusChip?.setTheme(settings.theme);
+  if (!settings.enabled || settings.nerProvider === 'off') {
+    reportSupportedPageActivity(false, true);
+  } else {
+    reportVisibility();
+  }
+  if (settings.debug) {
+    console.log(`[PG:content] Settings ${how}`);
+  }
+}
 
 // --- Initialize ---
 
@@ -1282,28 +1230,8 @@ async function init(): Promise<void> {
           }
         }
       }
-      if (changes['pg_settings']) {
-        const next = changes['pg_settings'].newValue as Settings | undefined;
-        if (next) {
-          const vaultToggled = settings?.identityVaultEnabled !== next.identityVaultEnabled;
-          settings = next;
-          interceptor.setEnabled(settings.enabled);
-          dismissAutoReplaceToastIfModeLeft();
-          if (vaultToggled) void reloadVaultAndScope();
-          clipboardInterceptor.setTheme(settings.theme);
-          clipboardInterceptor.setEnabled(
-            settings.enabled && settings.clipboardInterceptEnabled,
-          );
-          pageStatusChip?.setTheme(settings.theme);
-          if (!settings.enabled || settings.nerProvider === 'off') {
-            reportSupportedPageActivity(false, true);
-          } else {
-            reportVisibility();
-          }
-          if (settings.debug) {
-            console.log('[PG:content] Settings reloaded from storage event');
-          }
-        }
+      if (changes['pg_settings']?.newValue) {
+        applySettings(changes['pg_settings'].newValue, 'reloaded from storage event');
       }
       if (changes[SYSTEM_CHECK_STORAGE_KEY]) {
         // System-check storage updates carry the freshest tier, localAiState,

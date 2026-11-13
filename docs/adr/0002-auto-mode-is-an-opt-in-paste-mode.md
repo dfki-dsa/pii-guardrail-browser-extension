@@ -1,4 +1,4 @@
-# Auto-replace is an opt-in paste mode with an after-the-fact Undo and Review
+# Auto-mode is an opt-in paste mode with an after-the-fact Undo and Review
 
 ## Context
 
@@ -30,7 +30,12 @@ user reviews before anything is inserted.
 
 1. A setting `pasteReviewMode: 'review' | 'auto'`, default `'review'`. Any stored value other
    than `'auto'` behaves as `'review'`, including a settings object that arrives unnormalised
-   through a storage event.
+   through a storage event. The setting is offered where a user discovers they want it — a
+   "Auto-mode" switch in the review pop-up, applied the moment it is flipped — and where
+   they would look for it later, as an "Auto-mode" toggle on the popup's first tab. It is one
+   setting with two controls, not two settings, and both explain themselves through the same
+   info tag. The review pop-up looks the same whether it holds a paste or looks back at one
+   already replaced; only what its buttons do differs.
 2. In `'auto'`, the extension replaces **exactly what the pop-up would have pre-ticked**: not in
    a skipped code block, and at or above the span's threshold. The rule lives in
    `shared/review-defaults.ts` and the pop-up's model reads it from there too. Anonymising and
@@ -39,10 +44,17 @@ user reviews before anything is inserted.
    (open the pop-up for that paste; what the user confirms replaces the inserted text). Ignoring
    the notice keeps the replacement. Closing a pop-up opened this way keeps it as well.
 4. Undo and Review share one primitive. It finds the inserted text in the message box by a
-   match that ignores whitespace, requires exactly one match, replaces it through the same
-   insertion path a paste uses, and then reads the message box back to confirm the result. If
-   the text is not found exactly once, nothing is touched. If the read-back disagrees, the swap
-   is reported as failed. Either way the user is told.
+   match that ignores whitespace, replaces it through the same insertion path a paste uses, and
+   then reads the message box back to confirm the result. When the same text is in the box more
+   than once — pasted twice — it uses the copy recorded at insertion, and only while the number
+   of copies is unchanged; otherwise it cannot tell which is meant and touches nothing. The
+   read-back counts copies before and after rather than asking whether the old text is gone, so
+   a swap of one copy is neither missed nor mistaken. If the read-back disagrees, the swap is
+   reported as failed. Either way the user is told.
+6. Auto-mode leaves alone what the pop-up would have listed unticked — an item below its
+   threshold, text in a skipped code block — but not out of sight: the notice says how many
+   detected items were not replaced, and when none qualified it says "Nothing replaced" and
+   offers Review instead of a tick of approval.
 5. Undo does not roll back identity-vault or ledger entries. They stay, exactly as when a user
    deletes pasted text by hand; a token is only filed against a conversation once it is seen in
    the transcript.

@@ -61,7 +61,7 @@ These requirements are heuristic because Local AI runs a transformer NER model e
 - Intercepts text paste events in supported chat inputs.
 - Detects regex/checksum-backed PII such as email addresses, phone numbers, SSNs, credit cards, IBANs, IP addresses, and dates.
 - Adds local transformer NER for names, addresses, identifiers, credentials, and other free-text PII when model assets are prepared.
-- Shows a review UI before replacing detected spans. With the optional **Auto-replace** setting (off by default) it replaces them straight away instead and shows a notice with **Undo** and **Review**.
+- Shows a review UI before replacing detected spans. With the optional **auto-mode** (off by default) it replaces them straight away instead and shows a notice with **Undo** and **Review**.
 - Replaces selected spans with stable placeholders such as `[EMAIL_1]` or `[PERSON_1]`.
 - Stores the placeholder map locally in Chrome storage so model responses can be restored later, with restored values visually highlighted.
 

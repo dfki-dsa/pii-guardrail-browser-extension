@@ -1,6 +1,15 @@
 import type { SiteAdapter } from './site-adapters/adapter-interface';
-import { isTextFormControl, replaceTextCompat } from './site-adapters/adapter-interface';
-import { readComposerText, stripIgnorable } from './composer-text-range';
+import {
+  isTextFormControl,
+  replaceTextCompat,
+  type InsertHint,
+} from './site-adapters/adapter-interface';
+import {
+  locateAtCaret,
+  occurrencesOf,
+  readComposerText,
+  stripIgnorable,
+} from './composer-text-range';
 import type {
   CancelDetectionRequest,
   ComposerMatchState,
@@ -107,9 +116,9 @@ export class PasteInterceptor {
   private savedSelection: SavedSelection | null = null;
   /**
    * Where the last insert went, so `replaceInserted` addresses the same
-   * message box. `start` is the caret a form control's text went in at.
+   * message box and — when the same text is in it twice — the same copy.
    */
-  private lastInsert: { inputElement: HTMLElement; start?: number } | null = null;
+  private lastInsert: ({ inputElement: HTMLElement } & InsertHint) | null = null;
   private activePasteText: string | null = null;
   private waitForReady: () => Promise<void>;
 
@@ -133,6 +142,28 @@ export class PasteInterceptor {
   /** Stop listening for paste events. */
   stop(): void {
     window.removeEventListener('paste', this.handlePaste, true);
+  }
+
+  /**
+   * The message box this page's pastes go into, as far as is known right
+   * now: the one a paste is being held for, else the one the last insert
+   * went into, else whatever the adapter resolves. Used to place notices
+   * next to the chat; nothing is decided by it.
+   */
+  composerElement(): HTMLElement | null {
+    const held = this.savedSelection?.inputElement;
+    if (held?.isConnected) return held;
+    return this.liveInsert()?.inputElement ?? this.adapter.getInputElement();
+  }
+
+  /**
+   * The last insert, while its message box is still on the page. Once the
+   * site has replaced that element the record is dropped, so the old editor
+   * is not kept alive by it.
+   */
+  private liveInsert(): typeof this.lastInsert {
+    if (this.lastInsert && !this.lastInsert.inputElement.isConnected) this.lastInsert = null;
+    return this.lastInsert;
   }
 
   /** Enable or disable interception. */
@@ -358,9 +389,12 @@ export class PasteInterceptor {
     }
   }
 
-  /** Insert original text into input (fallback on error). */
-  pasteOriginal(text: string): void {
-    this.insertIntoComposer(text);
+  /**
+   * Insert original text into input (fallback on error). False when there
+   * was no message box for it to land in.
+   */
+  pasteOriginal(text: string): boolean {
+    return this.insertIntoComposer(text);
   }
 
   /**
@@ -372,19 +406,37 @@ export class PasteInterceptor {
   }
 
   /**
+   * Whether the message box of the last insert still holds any of `texts`.
+   *
+   * Asked with the replacement tokens a paste put in: they are short, never
+   * span a line, and survive an editor that reshapes the text around them,
+   * which the pasted text as a whole does not. Once none is left the message
+   * was sent, or the user removed what was pasted.
+   */
+  composerContainsAny(texts: readonly string[]): boolean {
+    const target = this.liveInsert();
+    if (!target) return false;
+    const current = readComposerText(target.inputElement);
+    return texts.some((text) => {
+      const wanted = stripIgnorable(text);
+      return wanted !== '' && current.includes(wanted);
+    });
+  }
+
+  /**
    * Swap the text of the last insert for `newText` — the step behind Undo
    * and Review after an automatic replacement.
    *
-   * Resolves false unless the swap demonstrably took. When `oldText` is not
-   * found exactly once nothing is touched at all. When it is, the swap runs and
-   * afterwards the composer is read back to confirm it now holds `newText`
-   * and no longer holds `oldText`. The read-back is what stands between this
-   * and an editor that redraws from its own state and quietly drops the
-   * change — which would otherwise be reported as done.
+   * Resolves false unless the swap demonstrably took. When it cannot be told
+   * which copy of `oldText` is meant, nothing is touched at all. Otherwise
+   * the swap runs and the composer is read back to confirm it now holds one
+   * copy fewer of `oldText` and one more of `newText`. The read-back is what
+   * stands between this and an editor that redraws from its own state and
+   * quietly drops the change — which would otherwise be reported as done.
    */
   async replaceInserted(oldText: string, newText: string): Promise<boolean> {
-    const target = this.lastInsert;
-    if (!target || !target.inputElement.isConnected) return false;
+    const target = this.liveInsert();
+    if (!target) return false;
 
     const oldCore = stripIgnorable(oldText);
     const newCore = stripIgnorable(newText);
@@ -395,19 +447,33 @@ export class PasteInterceptor {
       return readComposerText(target.inputElement).includes(oldCore);
     }
 
-    if (!replaceTextCompat(target.inputElement, oldText, newText, target.start)) {
+    // Counted, not merely looked for: the same text can be in the box more
+    // than once — pasted twice, say — and only one copy is being swapped.
+    // "Is the old text gone?" would then call a swap that worked a failure,
+    // and the user would be told nothing changed while the original sat in
+    // the message box.
+    const before = readComposerText(target.inputElement);
+    const oldBefore = occurrencesOf(before, oldCore).length;
+    const newBefore = occurrencesOf(before, newCore).length;
+
+    if (!replaceTextCompat(target.inputElement, oldText, newText, target)) {
       return false;
     }
 
     await editorSettled();
 
-    const now = readComposerText(target.inputElement);
-    if (!now.includes(newCore)) return false;
-    // `oldCore` may legitimately survive as part of `newCore` (restoring an
-    // original that happens to contain the replaced text). Otherwise its
-    // presence means the editor kept the old text alongside or instead.
-    if (now.includes(oldCore) && !newCore.includes(oldCore)) return false;
+    const after = readComposerText(target.inputElement);
+    // One text can contain the other (an original that happens to include
+    // its own replacement); that count then cannot move and proves nothing.
+    const oneOldGone =
+      newCore.includes(oldCore) || occurrencesOf(after, oldCore).length < oldBefore;
+    const oneNewThere =
+      oldCore.includes(newCore) || occurrencesOf(after, newCore).length > newBefore;
+    if (!oneOldGone || !oneNewThere) return false;
 
+    // The hint named the old text's copy; it says nothing about the new one.
+    target.start = undefined;
+    target.occurrence = null;
     return true;
   }
 
@@ -439,7 +505,12 @@ export class PasteInterceptor {
 
     this.restoreSelection();
     this.adapter.insertText(input, text);
-    this.lastInsert = { inputElement: input, start };
+    this.lastInsert = {
+      inputElement: input,
+      start,
+      // Taken now, while the caret still sits at the end of what went in.
+      occurrence: isTextFormControl(input) ? null : locateAtCaret(input, text),
+    };
     return true;
   }
 }

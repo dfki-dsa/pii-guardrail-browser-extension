@@ -565,6 +565,8 @@ describe('PasteInterceptor', () => {
 
       expect(landed.pasteAnonymized('Redacted [PERSON_1] text.')).toBe(true);
       expect(lost.pasteAnonymized('Redacted [PERSON_1] text.')).toBe(false);
+      expect(landed.pasteOriginal('Original text.')).toBe(true);
+      expect(lost.pasteOriginal('Original text.')).toBe(false);
     });
   });
 
@@ -658,6 +660,116 @@ describe('PasteInterceptor', () => {
       input.remove();
 
       await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+    });
+
+    it('knows whether any of a paste\'s tokens are still in the message box', () => {
+      const input = document.createElement('div');
+      input.setAttribute('contenteditable', 'true');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+      const tokens = ['[PERSON_1]', '[PHONE_1]'];
+
+      // Nothing inserted yet.
+      expect(interceptor.composerContainsAny(tokens)).toBe(false);
+
+      interceptor.pasteAnonymized(REPLACED);
+      expect(interceptor.composerContainsAny(tokens)).toBe(true);
+
+      // An editor reshaping the text around the tokens does not lose them.
+      input.innerHTML = '<ul><li>Dear <b>[PERSON_1]</b></li><li>your code is [PHONE_1]</li></ul>';
+      expect(interceptor.composerContainsAny(tokens)).toBe(true);
+
+      // One token edited away: the other still marks the paste as there.
+      input.innerHTML = '<p>Dear Jane, your code is [PHONE_1].</p>';
+      expect(interceptor.composerContainsAny(tokens)).toBe(true);
+
+      // Sent: the site empties the box.
+      input.replaceChildren();
+      expect(interceptor.composerContainsAny(tokens)).toBe(false);
+    });
+
+    it('finds nothing in a box that left the page, or when asked about nothing', () => {
+      const input = document.createElement('textarea');
+      document.body.append(input);
+      const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+      interceptor.pasteAnonymized(REPLACED);
+      expect(interceptor.composerContainsAny(['[PERSON_1]'])).toBe(true);
+      expect(interceptor.composerContainsAny([])).toBe(false);
+      expect(interceptor.composerContainsAny([' \n '])).toBe(false);
+
+      input.remove();
+      expect(interceptor.composerContainsAny(['[PERSON_1]'])).toBe(false);
+    });
+
+    describe('when the same text was pasted twice', () => {
+      beforeEach(() => {
+        // Detection never answers: these tests supply the replaced text
+        // themselves, and a pending paste must not finish behind their back.
+        (chrome.runtime.sendMessage as jest.Mock).mockReturnValue(new Promise(() => undefined));
+      });
+
+      /** Paste through the real event, so the caret the text goes in at is recorded. */
+      const pasteAt = (
+        interceptor: PasteInterceptor,
+        input: HTMLTextAreaElement,
+        caret: number,
+        replaced: string,
+      ): void => {
+        input.setSelectionRange(caret, caret);
+        input.dispatchEvent(pasteEvent('Synthetic private text, long enough to be held for review.'));
+        interceptor.pasteAnonymized(replaced);
+      };
+
+      it('restores the second copy in a textarea and says so', async () => {
+        // The check used to be "is the old text gone from the box?". With a
+        // second copy still there it answered no, and the user was told
+        // nothing had changed while the original sat in the message box.
+        const input = document.createElement('textarea');
+        document.body.append(input);
+        const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+        interceptor.start();
+
+        pasteAt(interceptor, input, 0, REPLACED);
+        input.value += '\n';
+        pasteAt(interceptor, input, input.value.length, REPLACED);
+        expect(input.value).toBe(`${REPLACED}\n${REPLACED}`);
+
+        await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(true);
+        expect(input.value).toBe(`${REPLACED}\n${ORIGINAL}`);
+
+        interceptor.stop();
+      });
+
+      it('restores the second copy in a rich editor', async () => {
+        const input = document.createElement('div');
+        input.setAttribute('contenteditable', 'true');
+        document.body.append(input);
+        const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+        interceptor.pasteAnonymized(REPLACED);
+        interceptor.pasteAnonymized(REPLACED);
+        expect(input.textContent).toBe(REPLACED + REPLACED);
+
+        await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(true);
+        expect(input.textContent).toBe(REPLACED + ORIGINAL);
+      });
+
+      it('changes nothing in a rich editor once a copy was removed and it cannot tell which is left', async () => {
+        const input = document.createElement('div');
+        input.setAttribute('contenteditable', 'true');
+        document.body.append(input);
+        const interceptor = new PasteInterceptor(insertingAdapter(input), makeCallbacks());
+
+        interceptor.pasteAnonymized(REPLACED);
+        interceptor.pasteAnonymized(REPLACED);
+        // The user deletes one of the two. The survivor may be the earlier
+        // paste, which Undo has no business touching.
+        input.textContent = REPLACED;
+
+        await expect(interceptor.replaceInserted(REPLACED, ORIGINAL)).resolves.toBe(false);
+        expect(input.textContent).toBe(REPLACED);
+      });
     });
 
     it('treats a swap for identical text as done only while the text is still there', async () => {

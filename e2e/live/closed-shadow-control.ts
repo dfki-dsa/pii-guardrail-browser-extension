@@ -3,10 +3,19 @@ import { LiveE2EError } from './classifier';
 import type { LivePhase } from './contracts';
 
 const ALLOWED_CONTROLS: Record<string, ReadonlySet<string>> = {
-  '#pg-review-overlay-host': new Set(['pg-confirm-btn']),
+  '#pg-review-overlay-host': new Set([
+    'pg-confirm-btn',
+    'pg-paste-original-btn',
+    'pg-auto-mode-toggle',
+    'pg-auto-mode-info',
+  ]),
   '.pg-deanon-host': new Set(['pg-reveal-btn', 'pg-copy-btn']),
   '#pg-clipboard-toast-host': new Set(['pg-clipboard-replace-btn']),
-  '#pg-auto-replace-toast-host': new Set(['pg-auto-review-btn', 'pg-auto-undo-btn']),
+  '#pg-auto-mode-toast-host': new Set([
+    'pg-auto-review-btn',
+    'pg-auto-undo-btn',
+    'pg-auto-close-btn',
+  ]),
 };
 
 interface CdpNode {

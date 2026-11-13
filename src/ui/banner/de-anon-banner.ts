@@ -96,8 +96,16 @@ export function attachDeAnonBanner(
   const theme = options.theme ?? 'dark';
   const readFormControls = options.readFormControls ?? false;
 
-  // Don't attach twice
-  if (responseElement.dataset.pgBanner === 'attached') return null;
+  // Don't attach twice — but only a banner that is still on the page counts.
+  // The banner sits beside the reply, in markup the site owns, and a site
+  // re-rendering around a finished reply can sweep it away while the reply
+  // element and its mark survive. Trusting the mark alone would then refuse
+  // this reply a banner for the rest of the page's life, so the banner's own
+  // record is asked instead.
+  if (hasLiveBanner(responseElement)) return null;
+  // Undo whatever a lost banner left behind (a reveal layer, hidden content,
+  // the mark on the element) before starting over.
+  liveBanners.get(responseElement)?.detach();
 
   // Revealing replaces the region it annotates. Doing that to a message box
   // would write original values into text about to be sent.
@@ -196,9 +204,26 @@ export function attachDeAnonBanner(
     if (revealed) hideRevealed();
     host.remove();
     delete responseElement.dataset.pgBanner;
+    if (liveBanners.get(responseElement)?.host === host) {
+      liveBanners.delete(responseElement);
+    }
   };
 
+  liveBanners.set(responseElement, { host, detach });
+
   return { element: responseElement, refresh: renderCount, detach };
+}
+
+/**
+ * The banner each annotated element currently has, so a mark left behind by a
+ * banner the site removed can be told apart from a banner that is really
+ * there. Weak, so a reply the site discards takes its entry with it.
+ */
+const liveBanners = new WeakMap<HTMLElement, { host: HTMLElement; detach: () => void }>();
+
+/** Whether `element` has a banner that is still on the page. */
+export function hasLiveBanner(element: HTMLElement): boolean {
+  return liveBanners.get(element)?.host.isConnected === true;
 }
 
 function buildRevealLayer(

@@ -70,4 +70,74 @@ describe('ReviewOverlay cancellation', () => {
     expect(cb.onPasteOriginal).not.toHaveBeenCalled();
     expect(document.getElementById('pg-review-overlay-host')).toBeNull();
   });
+
+  describe('Enter', () => {
+    // Each pop-up listens on the document until it is closed; one left open
+    // by an earlier case would answer the next case's key press.
+    const open: Array<{ destroy: () => void }> = [];
+    const show = (cb: ReturnType<typeof callbacks>): void => {
+      const overlay = new ReviewOverlay('Ada secret', spans, cb, 0.5);
+      overlay.show();
+      open.push(overlay);
+    };
+    afterEach(() => {
+      for (const overlay of open.splice(0)) overlay.destroy();
+    });
+
+    /** A control inside the pop-up, standing in for the stubbed component. */
+    function controlInside(html: string): HTMLElement {
+      const host = document.getElementById('pg-review-overlay-host')!;
+      const holder = document.createElement('div');
+      holder.innerHTML = html;
+      const control = holder.firstElementChild as HTMLElement;
+      host.shadowRoot!.append(control);
+      return control;
+    }
+
+    const pressEnter = (): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+      document.dispatchEvent(event);
+      return event;
+    };
+
+    it('confirms the pop-up while focus is not on one of its controls', () => {
+      const cb = callbacks();
+      show(cb);
+
+      const event = pressEnter();
+
+      expect(cb.onConfirm).toHaveBeenCalledTimes(1);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it.each([
+      ['the second button', '<button type="button" id="pg-paste-original-btn">Restore original</button>'],
+      ['the auto-mode switch', '<button type="button" role="switch" aria-checked="false"></button>'],
+      ['a type dropdown', '<select><option>PERSON</option></select>'],
+      ['a text field', '<input type="text" />'],
+    ])('leaves Enter to %s when it has focus', (_name, html) => {
+      // Taking Enter here would make it do the opposite of the focused
+      // control: "Restore original" would replace and paste.
+      const cb = callbacks();
+      show(cb);
+      controlInside(html).focus();
+
+      const event = pressEnter();
+
+      expect(cb.onConfirm).not.toHaveBeenCalled();
+      expect(cb.onCancel).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.getElementById('pg-review-overlay-host')).not.toBeNull();
+    });
+
+    it('still closes on Escape whatever has focus', () => {
+      const cb = callbacks();
+      show(cb);
+      controlInside('<button type="button">Restore original</button>').focus();
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+      expect(cb.onCancel).toHaveBeenCalledTimes(1);
+    });
+  });
 });

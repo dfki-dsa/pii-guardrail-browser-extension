@@ -11,6 +11,8 @@
  */
 
 import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
+import { centerOverAnchor } from '../shared/anchored-position';
+import { ToastLifetime } from '../shared/toast-lifetime';
 
 const TOAST_AUTO_DISMISS_MS = 6000;
 const CONFIRMATION_VISIBLE_MS = 1500;
@@ -19,22 +21,11 @@ const CLIPBOARD_TOAST_STYLES = `
   ${SHADOW_DESIGN_SYSTEM_STYLES}
 
   .pg-toast {
-    position: fixed;
-    bottom: 132px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2147483646;
     display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    width: max-content;
     max-width: min(480px, calc(100vw - 32px));
     padding: 10px 12px;
     border-radius: var(--pg-radius-md);
-    font-size: 13px;
     line-height: 1.4;
-    pointer-events: auto;
-    animation: pg-design-pop-in 160ms ease-out;
   }
 
   .pg-toast-status {
@@ -54,10 +45,6 @@ const CLIPBOARD_TOAST_STYLES = `
   .pg-toast-btn {
     padding: 6px 10px;
     white-space: nowrap;
-  }
-
-  .pg-toast-btn[hidden] {
-    display: none;
   }
 
   @media (max-width: 520px) {
@@ -88,21 +75,26 @@ export class ClipboardToast {
   private toastEl: HTMLDivElement | null = null;
   private msgEl: HTMLSpanElement | null = null;
   private btnEl: HTMLButtonElement | null = null;
-  private dismissTimer: number | null = null;
-  private mounted = false;
-  private disposed = false;
+  private readonly life: ToastLifetime;
   private readonly theme: 'dark' | 'light';
   private readonly cbs: ClipboardToastCallbacks;
+  /** The message box; the toast lines up with it rather than with the window. */
+  private readonly anchor: HTMLElement | null;
 
-  constructor(theme: 'dark' | 'light', cbs: ClipboardToastCallbacks) {
+  constructor(
+    theme: 'dark' | 'light',
+    cbs: ClipboardToastCallbacks,
+    anchor: HTMLElement | null = null,
+  ) {
     this.theme = theme;
     this.cbs = cbs;
+    this.anchor = anchor;
     this.host = document.createElement('div');
     this.host.id = 'pg-clipboard-toast-host';
     this.shadow = this.host.attachShadow({ mode: 'closed' });
     this.shadow.innerHTML = `
       <style>${CLIPBOARD_TOAST_STYLES}</style>
-      <div class="pg-toast pg-design-surface" data-theme="${this.theme}" role="status" aria-live="polite" aria-atomic="true">
+      <div class="pg-toast pg-design-surface pg-design-toast" data-theme="${this.theme}" role="status" aria-live="polite" aria-atomic="true">
         <span class="pg-toast-status" aria-hidden="true"></span>
         <span class="pg-toast-msg pg-design-muted">Copied — contains replaced items. Restore originals?</span>
         <button class="pg-toast-btn pg-design-button" id="pg-clipboard-replace-btn" type="button">Replace with originals</button>
@@ -112,16 +104,14 @@ export class ClipboardToast {
     this.msgEl = this.shadow.querySelector('.pg-toast-msg');
     this.btnEl = this.shadow.querySelector('.pg-toast-btn');
 
+    this.life = new ToastLifetime(this.host, TOAST_AUTO_DISMISS_MS, () => this.cbs.onDispose?.());
+    this.life.pauseWhileEngaged(this.toastEl);
     this.btnEl?.addEventListener('click', () => this.handleReplace());
-    this.toastEl?.addEventListener('mouseenter', () => this.pauseAutoDismiss());
-    this.toastEl?.addEventListener('mouseleave', () => this.scheduleAutoDismiss());
   }
 
   show(): void {
-    if (this.mounted || this.disposed) return;
-    document.body.appendChild(this.host);
-    this.mounted = true;
-    this.scheduleAutoDismiss();
+    if (!this.life.mount()) return;
+    centerOverAnchor(this.toastEl, this.anchor);
   }
 
   /**
@@ -130,48 +120,26 @@ export class ClipboardToast {
    * newer copy supersedes an older one.
    */
   dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    this.pauseAutoDismiss();
-    if (this.mounted) {
-      this.host.remove();
-      this.mounted = false;
-    }
-    this.cbs.onDispose?.();
+    this.life.dispose();
   }
 
-  /** True between construction and dispose. Useful for tests. */
+  /** True between show() and dispose(). Useful for tests. */
   isMounted(): boolean {
-    return this.mounted;
+    return this.life.isMounted;
   }
 
   private handleReplace(): void {
-    if (this.disposed) return;
+    if (this.life.isDisposed) return;
     this.cbs.onReplace();
     this.showConfirmation();
   }
 
   private showConfirmation(): void {
-    if (this.disposed) return;
-    this.pauseAutoDismiss();
+    if (this.life.isDisposed) return;
+    this.life.pause();
     if (this.msgEl) this.msgEl.textContent = 'Clipboard replaced';
     if (this.btnEl) this.btnEl.hidden = true;
-    window.setTimeout(() => this.dispose(), CONFIRMATION_VISIBLE_MS);
-  }
-
-  private scheduleAutoDismiss(): void {
-    if (this.disposed) return;
-    this.pauseAutoDismiss();
-    this.dismissTimer = window.setTimeout(
-      () => this.dispose(),
-      TOAST_AUTO_DISMISS_MS,
-    );
-  }
-
-  private pauseAutoDismiss(): void {
-    if (this.dismissTimer !== null) {
-      clearTimeout(this.dismissTimer);
-      this.dismissTimer = null;
-    }
+    centerOverAnchor(this.toastEl, this.anchor);
+    this.life.disposeAfter(CONFIRMATION_VISIBLE_MS);
   }
 }

@@ -59,6 +59,8 @@
           {protection}
           {categories}
           {vault}
+          autoMode={settings.autoMode}
+          setAutoMode={settings.setAutoMode}
           openPrivacyPolicy={settings.openPrivacyPolicy}
           openTermsOfUse={settings.openTermsOfUse}
           openImpressum={settings.openImpressum}
@@ -80,7 +82,6 @@
           minConfidence={settings.minConfidence}
           debug={settings.debug}
           clipboardInterceptEnabled={settings.clipboardInterceptEnabled}
-          autoReplace={settings.autoReplace}
           nerModel={settings.nerModel}
           nerModelChoice={settings.nerModelChoice}
           nerModelChoices={settings.nerModelChoices}
@@ -90,7 +91,6 @@
           setMinConfidence={settings.setMinConfidence}
           setDebug={settings.setDebug}
           setClipboardInterceptEnabled={settings.setClipboardInterceptEnabled}
-          setAutoReplace={settings.setAutoReplace}
           setNerModelChoice={settings.setNerModelChoice}
           openOptions={settings.openOptions}
           openIssueReport={settings.openIssueReport}

@@ -1,4 +1,5 @@
 import { derived, writable, get, type Readable, type Writable } from 'svelte/store';
+import { isAutoMode, pasteReviewModeFor } from '../shared/review-defaults';
 import type {
   ComposerMatchState,
   DetectionOptions,
@@ -98,7 +99,7 @@ export type SettingsModel = {
   debug: Writable<boolean>;
   clipboardInterceptEnabled: Writable<boolean>;
   /** True when detected items are replaced on paste without the review pop-up. */
-  autoReplace: Writable<boolean>;
+  autoMode: Writable<boolean>;
   nerModel: Writable<NerModelKey>;
   nerModelChoice: Writable<string>;
   nerModelChoices: readonly NerModelChoice[];
@@ -112,7 +113,7 @@ export type SettingsModel = {
   setMinConfidence: (value: number) => Promise<void>;
   setDebug: (enabled: boolean) => Promise<void>;
   setClipboardInterceptEnabled: (enabled: boolean) => Promise<void>;
-  setAutoReplace: (enabled: boolean) => Promise<void>;
+  setAutoMode: (enabled: boolean) => Promise<void>;
   setNerModelChoice: (value: string) => Promise<void>;
 };
 export type AppModels = {
@@ -211,7 +212,7 @@ export function createAppModels(): AppModels {
   const minConfidence = writable(0.5);
   const debug = writable(false);
   const clipboardInterceptEnabled = writable(true);
-  const autoReplace = writable(false);
+  const autoMode = writable(false);
   const nerModel = writable<NerModelKey>('bardsai');
   const nerModelChoice = writable<string>(nerModelChoiceValue('bardsai', undefined));
 
@@ -226,7 +227,7 @@ export function createAppModels(): AppModels {
     minConfidence.set(settings.minConfidence);
     debug.set(settings.debug);
     clipboardInterceptEnabled.set(settings.clipboardInterceptEnabled);
-    autoReplace.set(settings.pasteReviewMode === 'auto');
+    autoMode.set(isAutoMode(settings));
     const normalizedModel = runtimeNerModelKey(settings.nerModel);
     nerModel.set(normalizedModel);
     nerModelChoice.set(nerModelChoiceValue(normalizedModel, settings.nerWebGpuDtype));
@@ -465,7 +466,7 @@ export function createAppModels(): AppModels {
       minConfidence,
       debug,
       clipboardInterceptEnabled,
-      autoReplace,
+      autoMode,
       nerModel,
       nerModelChoice,
       nerModelChoices: nerModelChoices(),
@@ -479,7 +480,7 @@ export function createAppModels(): AppModels {
       setMinConfidence: (value) => saveAndBroadcast({ minConfidence: value }),
       setDebug: async (value) => { await saveSettings({ debug: value }); debug.set(value); },
       setClipboardInterceptEnabled: (value) => saveAndBroadcast({ clipboardInterceptEnabled: value }),
-      setAutoReplace: (value) => saveAndBroadcast({ pasteReviewMode: value ? 'auto' : 'review' }),
+      setAutoMode: (value) => saveAndBroadcast({ pasteReviewMode: pasteReviewModeFor(value) }),
       setNerModelChoice: async (value) => {
         const parsed = parseNerModelChoice(value);
         const patch: Partial<Settings> = { nerModel: runtimeNerModelKey(parsed.nerModel) };

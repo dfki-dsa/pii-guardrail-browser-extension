@@ -3,7 +3,17 @@ import {
   findTextRange,
   normalizeLineEnds,
   trimIgnorable,
+  type OccurrenceHint,
 } from '../composer-text-range';
+
+/**
+ * Where text was inserted, remembered so a later swap addresses the same
+ * copy: the caret offset for a form control, the occurrence for a rich editor.
+ */
+export interface InsertHint {
+  start?: number;
+  occurrence?: OccurrenceHint | null;
+}
 
 /**
  * Interface for site-specific DOM adapters.
@@ -199,8 +209,8 @@ export function insertTextCompat(element: HTMLElement, text: string): void {
  * there exactly once: the user edited it, sent it, or the editor reshaped it
  * beyond recognition.
  *
- * `hintStart` is the caret a form control's text was inserted at; see
- * `findInFormControl`.
+ * `hint` says which copy is meant when the same text is there more than once;
+ * see `findInFormControl` and `findTextRange`.
  *
  * A true return means the swap was attempted, not that the editor kept it.
  * Callers that care — all of them — re-read the composer afterwards.
@@ -209,10 +219,10 @@ export function replaceTextCompat(
   element: HTMLElement,
   oldText: string,
   newText: string,
-  hintStart?: number,
+  hint: InsertHint = {},
 ): boolean {
   if (isTextFormControl(element)) {
-    const found = findInFormControl(element.value, oldText, hintStart);
+    const found = findInFormControl(element.value, oldText, hint.start);
     if (!found) return false;
     element.focus();
     try {
@@ -226,7 +236,7 @@ export function replaceTextCompat(
     return true;
   }
 
-  const range = findTextRange(element, oldText);
+  const range = findTextRange(element, oldText, hint.occurrence);
   if (!range) return false;
 
   const selection = window.getSelection();

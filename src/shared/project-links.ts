@@ -25,11 +25,25 @@ export function packagedTermsUrl(): string {
 export const SECURITY_SUPPORT_EMAIL = 'pii@dfki.de';
 
 /**
- * Single source of truth for the assistive/limits-of-detection disclaimer.
- * Kept in sync with PRIVACY.md §15, the store listing, and the README.
+ * The limits-of-detection statement every disclaimer is built from. Kept in
+ * sync with PRIVACY.md §15, the store listing, and the README.
  */
-export const LIMITS_DISCLAIMER =
-  'Privacy Guardrail is assistive only and can miss or mis-flag sensitive content. Always review text before you send it.';
+const LIMITS_STATEMENT =
+  'Privacy Guardrail is assistive only and can miss or mis-flag sensitive content.';
+
+/**
+ * The full disclaimer: the statement plus the instruction to review. Shown in
+ * the extension popup, which is where it reaches someone using auto-mode, who
+ * may never see the review pop-up.
+ */
+export const LIMITS_DISCLAIMER = `${LIMITS_STATEMENT} Always review text before you send it.`;
+
+/**
+ * The disclaimer at the foot of the review pop-up: the statement alone. The
+ * instruction to review is left out there on purpose — the pop-up is the
+ * review. Built from the same statement so the two wordings cannot drift.
+ */
+export const REVIEW_POPUP_DISCLAIMER = LIMITS_STATEMENT;
 
 /**
  * EU AI Act Art. 50 transparency notice. Surfaced wherever Local AI is
