@@ -221,7 +221,12 @@ export class AutoModeController {
     const { composer, indicate } = this.deps;
 
     const restoreOriginal = async (): Promise<void> => {
-      if (await composer.replaceInserted(inserted, originalText)) {
+      // A throw from the editor counts as a failed swap: the replaced text
+      // stays where it is and the user is told, never left guessing.
+      const restored = await composer
+        .replaceInserted(inserted, originalText)
+        .catch(() => false);
+      if (restored) {
         indicate(oneLine(RESTORED_TITLE, RESTORED_DETAIL), NO_PII_INDICATOR_MS);
       } else {
         indicate(`⚠ ${oneLine(RESTORE_FAILED_TITLE, SWAP_FAILED_DETAIL)}`, FAILURE_VISIBLE_MS);
@@ -240,17 +245,20 @@ export class AutoModeController {
           }
 
           const anonymizedText = this.deps.anonymize(originalText, approvedSpans);
-          void composer.replaceInserted(inserted, anonymizedText).then((swapped) => {
-            if (!swapped) {
-              indicate(
-                `⚠ ${oneLine(UPDATE_FAILED_TITLE, SWAP_FAILED_DETAIL)}`,
-                FAILURE_VISIBLE_MS,
-              );
-              return;
-            }
-            this.deps.record(anonymizedText);
-            indicate(`\u{1F512} ${replacedItemsLabel(approvedSpans.length)}`, CHIP_FADE_MS);
-          });
+          void composer
+            .replaceInserted(inserted, anonymizedText)
+            .catch(() => false)
+            .then((swapped) => {
+              if (!swapped) {
+                indicate(
+                  `⚠ ${oneLine(UPDATE_FAILED_TITLE, SWAP_FAILED_DETAIL)}`,
+                  FAILURE_VISIBLE_MS,
+                );
+                return;
+              }
+              this.deps.record(anonymizedText);
+              indicate(`\u{1F512} ${replacedItemsLabel(approvedSpans.length)}`, CHIP_FADE_MS);
+            });
         },
 
         onPasteOriginal: () => {

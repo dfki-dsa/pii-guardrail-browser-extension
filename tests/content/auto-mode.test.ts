@@ -350,6 +350,34 @@ describe('auto-mode', () => {
       );
     });
 
+    it('treats an editor error during the swap as a failed swap', async () => {
+      const outcome = openReview();
+      deps.record.mockClear();
+      deps.composer.replaceInserted.mockRejectedValueOnce(new Error('selection gone'));
+
+      outcome.onConfirm([person]);
+      await flush();
+
+      expect(deps.record).not.toHaveBeenCalled();
+      expect(deps.indicate).toHaveBeenLastCalledWith(
+        expect.stringContaining("Couldn't apply your changes"),
+        expect.any(Number),
+      );
+    });
+
+    it('treats an editor error during restore as a failed restore', async () => {
+      const outcome = openReview();
+      deps.composer.replaceInserted.mockRejectedValueOnce(new Error('selection gone'));
+
+      outcome.onPasteOriginal();
+      await flush();
+
+      expect(deps.indicate).toHaveBeenLastCalledWith(
+        expect.stringContaining("Couldn't restore the original"),
+        expect.any(Number),
+      );
+    });
+
     it('leaves the replacement alone when the pop-up is closed', async () => {
       const outcome = openReview();
       deps.composer.replaceInserted.mockClear();
