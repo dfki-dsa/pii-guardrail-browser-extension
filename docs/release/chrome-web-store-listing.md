@@ -1,6 +1,6 @@
 # Chrome Web Store Listing Copy
 
-Upload-ready copy and permission justifications for Privacy Guardrail `0.5.0`. This document mirrors the live Chrome Web Store listing. The Chrome Web Store upload itself remains manual — this document only prepares the text and asset references the operator pastes into the Developer Dashboard.
+Upload-ready copy and permission justifications for Privacy Guardrail `0.5.1`. This document mirrors the live Chrome Web Store listing. The Chrome Web Store upload itself remains manual — this document only prepares the text and asset references the operator pastes into the Developer Dashboard.
 
 ## Item Name
 
@@ -34,14 +34,12 @@ This is a public beta.
 Detection is assistive: it helps you catch things, but it will not catch everything and it is not a compliance or data-loss-prevention product.
 
 
-WHAT’S NEW IN 0.5.0
+WHAT’S NEW IN 0.5.1
 
-• Fixed a bug introduced by ChatGPT's newer desktop layout
-• Better resilience against HTML changes of the supported chat assistants. Pastes are now reviewed even when Privacy Guardrail no longer recognizes a site's message box, by using the box you pasted into. The popup tells you when it is working this way, and the on-page warning is now reserved for pastes that were not reviewed at all.
-• Privacy Guardrail now recognizes a chat by what is on the page instead of by its web address
-• Your original values are no longer stored against a conversation; they live only in the identity vault. With cross-session memory switched off, nothing is written to durable storage at all.
-• Fixed a bug that sometimes marked the wrong texts as sensitive
-• Conversations recorded by earlier versions keep working. Nothing is migrated, rewritten, or deleted
+• New optional auto-mode, off by default: personal data in a paste is replaced right away, and a short notice lets you undo the replacement or open the review
+• On-page notices and the review pop-up are now centred on the message box instead of the browser window
+• The reveal banner comes back by itself if a chat site redraws a reply
+• Fixed ChatGPT replies getting a missing or doubled reveal banner in its newer layout
 
 
 WHAT IT DOES
@@ -93,7 +91,7 @@ These requirements exist because the AI model runs locally on your device instea
 
 KNOWN LIMITATIONS — PLEASE READ
 
-Privacy Guardrail is an assistive tool, not a compliance or data loss prevention (DLP) product. It is currently in public beta (version 0.5.0).
+Privacy Guardrail is an assistive tool, not a compliance or data loss prevention (DLP) product. It is currently in public beta (version 0.5.1).
 
 • Detection can miss sensitive content (false negatives) and can flag harmless text (false positives). Always review the suggestions before sending.
 • Short names, ambiguous words, code blocks, tables, and unusual formatting reduce detection quality.
@@ -223,7 +221,7 @@ Variant selection rules:
 
 ## Pre-Submission Checklist
 
-- [ ] `manifest.json` version equals the released `0.5.0` artifact (`npm run version:check -- 0.5.0 --require-tag`).
+- [ ] `manifest.json` version equals the released `0.5.1` artifact (`npm run version:check -- 0.5.1 --require-tag`).
 - [ ] Uploaded ZIP is the exact artifact built by `npm run package:release` and matches the published SHA-256 checksum.
 - [ ] Listing only references the four supported sites and does not advertise generic or custom site support.
 - [ ] Listing uses "review", "replace", and "restore"; it avoids legal de-identification
