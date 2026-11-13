@@ -27,7 +27,7 @@ import { isInEditableRegion } from '../ui/shared/editable-region';
 import { centerOverAnchor } from '../ui/shared/anchored-position';
 import { ClipboardInterceptor } from './clipboard-interceptor';
 import { ReviewOverlay } from '../ui/overlay/overlay';
-import type { OverlayCallbacks, OverlayContext } from '../ui/overlay/overlay-model';
+import type { OverlayContext } from '../ui/overlay/overlay-model';
 import { AutoModeController, type ReviewOutcomeCallbacks, type Timings } from './auto-mode';
 import { replacedItemsLabel } from '../ui/auto-mode-toast/auto-mode-toast';
 import { isAutoMode, pasteReviewModeFor } from '../shared/review-defaults';
