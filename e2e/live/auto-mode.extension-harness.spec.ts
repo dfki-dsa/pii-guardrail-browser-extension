@@ -343,6 +343,36 @@ for (const surface of SURFACES) {
       }
     });
 
+    test('the reveal banner lines up with a reply whose text sits in a narrower, centred column', async () => {
+      const harness = await launch({ pasteReviewMode: 'auto' });
+      try {
+        const page = await openFakeSurface(harness, surface);
+        await paste(page, surface.composer, PASTED);
+        await expect.poll(() => composerText(page, surface.composer), { timeout: 30_000 })
+          .toMatch(EMAIL_TOKEN);
+        const token = (await composerText(page, surface.composer)).match(EMAIL_TOKEN)![0];
+
+        // Gemini's layout: the reply element spans the chat area and each
+        // block in it is centred to a measure of its own.
+        const centred = surface
+          .reply(token)
+          .replace('<p>', '<p data-column style="max-width:320px;margin:0 auto">');
+        await send(page, surface, centred);
+
+        const column = page.locator('[data-column]');
+        await column.waitFor({ state: 'visible' });
+        const banner = page.locator('.pg-deanon-host').last();
+        await expect
+          .poll(async () => Math.round((await banner.boundingBox())?.width ?? 0), { timeout: 10_000 })
+          .toBe(320);
+        const bannerBox = (await banner.boundingBox())!;
+        const columnBox = (await column.boundingBox())!;
+        expect(Math.abs(bannerBox.x - columnBox.x)).toBeLessThanOrEqual(1);
+      } finally {
+        await harness.close();
+      }
+    });
+
     test('the reveal banner comes back when the site drops it while re-rendering', async () => {
       const harness = await launch({ pasteReviewMode: 'auto' });
       try {

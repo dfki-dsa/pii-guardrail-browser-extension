@@ -16,6 +16,7 @@
 import type { ResolveResult } from '../../shared/placeholder-resolver';
 import { isInEditableRegion } from '../shared/editable-region';
 import { SHADOW_DESIGN_SYSTEM_STYLES } from '../shared/shadow-design-system';
+import { findTextColumn } from './text-column';
 
 /** Resolves the tokens currently in scope wherever they occur in `text`. */
 export type TokenResolver = (text: string) => ResolveResult;
@@ -130,6 +131,9 @@ export function attachDeAnonBanner(
   // Create banner host with Shadow DOM
   const host = document.createElement('div');
   host.className = 'pg-deanon-host';
+  // Said outright: a site's own styles can make a bare div inline, and an
+  // inline box takes no width.
+  host.style.display = 'block';
   const shadow = host.attachShadow({ mode: 'closed' });
 
   let revealed = false;
@@ -200,8 +204,18 @@ export function attachDeAnonBanner(
   // Insert banner before the response element
   responseElement.parentElement?.insertBefore(host, responseElement);
 
+  // Keep the banner over the reply's text where the reply element is wider
+  // than the text in it. The reply changing size is what moves the column:
+  // more of it streaming in, the window resized, a sidebar opened.
+  const align = (): void => alignWithTextColumn(host, responseElement);
+  align();
+  const resizeWatcher =
+    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(align);
+  resizeWatcher?.observe(responseElement);
+
   const detach = (): void => {
     if (revealed) hideRevealed();
+    resizeWatcher?.disconnect();
     host.remove();
     delete responseElement.dataset.pgBanner;
     if (liveBanners.get(responseElement)?.host === host) {
@@ -224,6 +238,27 @@ const liveBanners = new WeakMap<HTMLElement, { host: HTMLElement; detach: () => 
 /** Whether `element` has a banner that is still on the page. */
 export function hasLiveBanner(element: HTMLElement): boolean {
   return liveBanners.get(element)?.host.isConnected === true;
+}
+
+/**
+ * Give `host` the left edge and width of the column the reply's text is in,
+ * or let it fill its parent again when the text fills the reply.
+ */
+function alignWithTextColumn(host: HTMLElement, responseElement: HTMLElement): void {
+  // Measured from where the banner sits when left alone.
+  host.style.marginLeft = '';
+  host.style.width = '';
+
+  const column = findTextColumn(responseElement);
+  if (!column) return;
+  const natural = host.getBoundingClientRect();
+  const offset = column.left - natural.left;
+  // A column that reaches outside the banner's own space is not one the
+  // banner can be moved onto.
+  if (natural.width === 0 || offset < 0 || offset + column.width > natural.width + 1) return;
+
+  host.style.marginLeft = `${offset}px`;
+  host.style.width = `${column.width}px`;
 }
 
 function buildRevealLayer(
