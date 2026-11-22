@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ENTITY_TYPES, type EntityType } from '../../../shared/message-types';
-  import { truncate, type SpanState } from '../overlay-model';
+  import type { SpanState } from '../overlay-model';
 
   let {
     state,
@@ -39,7 +39,7 @@
     </label>
   {/if}
 
-  <span class="pg-entity-text" title={state.span.text}>{truncate(state.span.text, 24)}</span>
+  <span class="pg-entity-text" title={state.span.text}>{state.span.text}</span>
 
   {#if state.whitelisted}
     <!-- Disabled select so the layout box is identical to the real
