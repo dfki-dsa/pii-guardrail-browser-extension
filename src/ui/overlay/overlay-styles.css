@@ -337,14 +337,23 @@
   outline-offset: 2px;
 }
 
+/* The value is what the user is asked to approve, so it is shown whole:
+ * it wraps instead of being cut, and breaks anywhere so an unbroken email
+ * or IBAN cannot overflow the column. The clamp only guards against a
+ * runaway span; the full text stays in the `title`. */
 .pg-entity-text {
   flex: 1;
   font-family: var(--font-sans);
   font-size: 13px;
+  line-height: 1.35;
   color: var(--color-ink);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
   min-width: 0;
 }
 
@@ -488,9 +497,16 @@
   color: var(--color-muted);
   border-bottom: var(--border-hairline);
   margin-bottom: 4px;
-  white-space: nowrap;
+  /* Names the value about to be dismissed, so it wraps like the row it
+     came from. Fewer lines than the row: the menu opens below its button
+     and must not grow off the bottom of the page. */
+  line-height: 1.35;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
 }
 .pg-dismiss-menu-value {
   color: var(--color-ink);

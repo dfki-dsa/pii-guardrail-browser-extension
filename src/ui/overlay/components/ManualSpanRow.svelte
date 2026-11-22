@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { PiiSpan } from '../../../shared/message-types';
-  import { truncate } from '../overlay-model';
 
   let {
     span,
@@ -13,7 +12,7 @@
   <label class="pg-entity-checkbox">
     <input type="checkbox" checked disabled />
   </label>
-  <span class="pg-entity-text" title={span.text}>{truncate(span.text, 24)}</span>
+  <span class="pg-entity-text" title={span.text}>{span.text}</span>
   <span class="pg-entity-type-label">{span.entity_type}</span>
   <span class="pg-entity-score">manual</span>
   <button

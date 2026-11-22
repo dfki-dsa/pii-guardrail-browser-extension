@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { truncate, type DismissMenuState } from '../overlay-model';
+  import type { DismissMenuState } from '../overlay-model';
 
   let {
     menu,
@@ -65,9 +65,9 @@
   role="menu"
   style="top: {top}px; left: {left}px; width: {WIDTH}px;"
 >
-  <div class="pg-dismiss-menu-head">
+  <div class="pg-dismiss-menu-head" title={menu.spanText}>
     <span>Dismiss </span>
-    <span class="pg-dismiss-menu-value">"{truncate(menu.spanText, 28)}"</span>
+    <span class="pg-dismiss-menu-value">"{menu.spanText}"</span>
   </div>
 
   <button type="button" class="pg-dismiss-menu-item" role="menuitem" onclick={() => onChoose('none')}>

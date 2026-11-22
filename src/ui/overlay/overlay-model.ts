@@ -379,10 +379,6 @@ export class OverlayModel {
   }
 }
 
-export function truncate(text: string, maxLen: number): string {
-  return text.length > maxLen ? text.slice(0, maxLen - 2) + '..' : text;
-}
-
 function buildHighlightedHtml(
   originalText: string,
   states: SpanState[],
