@@ -6,6 +6,8 @@
     state,
     index,
     belowThreshold,
+    occurrences = 1,
+    score,
     onToggle,
     onRetype,
     onDismissClick,
@@ -13,6 +15,10 @@
     state: SpanState;
     index: number;
     belowThreshold: boolean;
+    /** How often this value appears in the text; one decision covers all. */
+    occurrences?: number;
+    /** Confidence to show; defaults to this span's own. */
+    score?: number;
     onToggle: (i: number, enabled: boolean) => void;
     onRetype: (i: number, type: EntityType) => void;
     onDismissClick: (i: number, anchor: HTMLElement) => void;
@@ -39,7 +45,10 @@
     </label>
   {/if}
 
-  <span class="pg-entity-text" title={state.span.text}>{state.span.text}</span>
+  <span class="pg-entity-text" title={state.span.text}>{state.span.text}{#if occurrences > 1}<span
+      class="pg-entity-count"
+      title={`Appears ${occurrences} times. Your choice applies to all of them.`}
+      aria-label={`appears ${occurrences} times`}>×{occurrences}</span>{/if}</span>
 
   {#if state.whitelisted}
     <!-- Disabled select so the layout box is identical to the real
@@ -61,7 +70,7 @@
     </select>
   {/if}
 
-  <span class="pg-entity-score">{(state.span.score * 100).toFixed(0)}%</span>
+  <span class="pg-entity-score">{((score ?? state.span.score) * 100).toFixed(0)}%</span>
 
   {#if state.whitelisted}
     <span class="pg-entity-dismiss" aria-hidden="true"></span>

@@ -357,6 +357,21 @@
   min-width: 0;
 }
 
+.pg-entity-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: var(--border-hairline);
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
 .pg-entity-type {
   appearance: none;
   -webkit-appearance: none;

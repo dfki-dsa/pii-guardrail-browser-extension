@@ -35,6 +35,8 @@
       state={$spanStates[i]}
       index={i}
       belowThreshold={model.isBelowThreshold($spanStates[i])}
+      occurrences={model.occurrences(i)}
+      score={model.groupScore(i)}
       {onToggle}
       {onRetype}
       {onDismissClick}
@@ -54,6 +56,8 @@
             state={$spanStates[i]}
             index={i}
             belowThreshold={model.isBelowThreshold($spanStates[i])}
+            occurrences={model.occurrences(i)}
+            score={model.groupScore(i)}
             {onToggle}
             {onRetype}
             {onDismissClick}

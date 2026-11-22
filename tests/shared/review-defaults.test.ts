@@ -57,3 +57,30 @@ describe('default review selection', () => {
     expect(selectDefaultApproved([], () => 0.5)).toEqual([]);
   });
 });
+
+describe('default review selection: a value that appears more than once', () => {
+  const at = () => 0.5;
+
+  it('approves an unsure occurrence when an identical one is confident', () => {
+    const spans = [
+      span({ start: 0, end: 4, score: 0.9 }),
+      span({ start: 10, end: 14, score: 0.3 }),
+    ];
+    expect(selectDefaultApproved(spans, at)).toEqual(spans);
+  });
+
+  it('leaves the value alone when no occurrence is confident', () => {
+    const spans = [
+      span({ start: 0, end: 4, score: 0.3 }),
+      span({ start: 10, end: 14, score: 0.4 }),
+    ];
+    expect(selectDefaultApproved(spans, at)).toEqual([]);
+  });
+
+  it('does not carry approval across types or into a code block', () => {
+    const confident = span({ start: 0, end: 4, score: 0.9 });
+    const otherType = span({ start: 10, end: 14, score: 0.3, entity_type: 'ORGANIZATION' });
+    const inCode = span({ start: 20, end: 24, score: 0.9, inCodeBlock: true });
+    expect(selectDefaultApproved([confident, otherType, inCode], at)).toEqual([confident]);
+  });
+});

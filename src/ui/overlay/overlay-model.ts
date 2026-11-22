@@ -10,7 +10,7 @@
 
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import type { EntityType, FeedbackEntry, PiiSpan } from '../../shared/message-types';
-import { isApprovedByDefault } from '../../shared/review-defaults';
+import { defaultApprovals, reviewGroupKey } from '../../shared/review-defaults';
 import {
   byteOffsetToStringIndex,
   stringIndexToByteOffset,
@@ -92,6 +92,13 @@ export class OverlayModel {
   autoMode: Writable<boolean>;
   /** Which items were selected when the pop-up opened. */
   private readonly initialEnabled: boolean[];
+  /**
+   * Identical values (same text, same detected type) share one row and one
+   * decision. `groups[i]` lists every index that shares a value with `i`,
+   * itself included; the first index of a group is the one that is listed.
+   */
+  private readonly groups: number[][];
+  private readonly indexOfSpan: Map<PiiSpan, number>;
   readonly context: OverlayContext;
 
   private readonly previewResolverFactory: PreviewResolverFactory | null;
@@ -118,13 +125,23 @@ export class OverlayModel {
         : 0.5
       : (confidenceThreshold as number);
 
+    const byKey = new Map<string, number[]>();
+    this.groups = spans.map((s) => {
+      const key = reviewGroupKey(s);
+      let members = byKey.get(key);
+      if (!members) byKey.set(key, (members = []));
+      return members;
+    });
+    spans.forEach((_, i) => this.groups[i].push(i));
+    this.indexOfSpan = new Map(spans.map((s, i) => [s, i]));
+
+    const approvals = defaultApprovals(spans, (s) =>
+      this.thresholdFn ? this.thresholdFn(s) : initialThreshold,
+    );
     this.spanStates = writable(
-      spans.map((s) => ({
+      spans.map((s, i) => ({
         span: s,
-        enabled: isApprovedByDefault(
-          s,
-          this.thresholdFn ? this.thresholdFn(s) : initialThreshold,
-        ),
+        enabled: approvals[i],
         entityType: s.entity_type,
         manualOverride: false,
         whitelisted: false,
@@ -139,11 +156,13 @@ export class OverlayModel {
 
     this.totalCount = derived(
       [this.spanStates, this.manualSpans],
-      ([states, manuals]) => states.length + manuals.length,
+      ([states, manuals]) =>
+        states.filter((_, i) => this.isListed(i)).length + manuals.length,
     );
     this.enabledCount = derived(
       [this.spanStates, this.manualSpans],
-      ([states, manuals]) => states.filter((s) => s.enabled).length + manuals.length,
+      ([states, manuals]) =>
+        states.filter((s, i) => s.enabled && this.isListed(i)).length + manuals.length,
     );
     this.highlightedHtml = derived(
       [this.spanStates, this.manualSpans],
@@ -160,12 +179,16 @@ export class OverlayModel {
     );
     this.mainIndices = derived(this.spanStates, (states) => {
       const out: number[] = [];
-      for (let i = 0; i < states.length; i++) if (!states[i].span.inCodeBlock) out.push(i);
+      for (let i = 0; i < states.length; i++) {
+        if (!states[i].span.inCodeBlock && this.isListed(i)) out.push(i);
+      }
       return out;
     });
     this.codeBlockIndices = derived(this.spanStates, (states) => {
       const out: number[] = [];
-      for (let i = 0; i < states.length; i++) if (states[i].span.inCodeBlock) out.push(i);
+      for (let i = 0; i < states.length; i++) {
+        if (states[i].span.inCodeBlock && this.isListed(i)) out.push(i);
+      }
       return out;
     });
   }
@@ -182,15 +205,43 @@ export class OverlayModel {
     return Math.max(this.thresholdFn(span), slider);
   }
 
+  /**
+   * Whether a row is dimmed as below its threshold. A row stands for every
+   * occurrence of its value, so it is dimmed only when all of them are below.
+   */
   isBelowThreshold(state: SpanState): boolean {
-    return state.span.score < this.thresholdFor(state.span);
+    const index = this.indexOfSpan.get(state.span);
+    if (index === undefined) return state.span.score < this.thresholdFor(state.span);
+    const states = get(this.spanStates);
+    return this.groups[index].every(
+      (i) => states[i].span.score < this.thresholdFor(states[i].span),
+    );
+  }
+
+  /** How many times the value in row `index` appears in the text. */
+  occurrences(index: number): number {
+    return this.groups[index]?.length ?? 1;
+  }
+
+  /** The highest confidence among the occurrences of the value in row `index`. */
+  groupScore(index: number): number {
+    const states = get(this.spanStates);
+    const members = this.groups[index] ?? [index];
+    return Math.max(...members.map((i) => states[i]?.span.score ?? 0));
+  }
+
+  /** True for the one index of each group of identical values that is listed. */
+  private isListed(index: number): boolean {
+    return this.groups[index][0] === index;
   }
 
   toggle(index: number, enabled: boolean): void {
     this.spanStates.update((states) => {
       if (!states[index]) return states;
       const next = states.slice();
-      next[index] = { ...next[index], enabled, manualOverride: true };
+      for (const i of this.groups[index]) {
+        next[i] = { ...next[i], enabled, manualOverride: true };
+      }
       return next;
     });
   }
@@ -200,7 +251,10 @@ export class OverlayModel {
       const state = states[index];
       if (!state || state.entityType === newType) return states;
       const next = states.slice();
-      next[index] = { ...state, entityType: newType };
+      for (const i of this.groups[index]) {
+        next[i] = { ...next[i], entityType: newType };
+      }
+      // One correction, however often the value appears.
       this.callbacks.onFeedback({
         text: state.span.text,
         detectedType: state.entityType,
@@ -238,12 +292,14 @@ export class OverlayModel {
       snapshot = states[index];
       if (!snapshot) return states;
       const next = states.slice();
-      next[index] = {
-        ...snapshot,
-        enabled: false,
-        manualOverride: true,
-        whitelisted: willWhitelist,
-      };
+      for (const i of this.groups[index]) {
+        next[i] = {
+          ...next[i],
+          enabled: false,
+          manualOverride: true,
+          whitelisted: willWhitelist,
+        };
+      }
       return next;
     });
     this.dismissMenu.set(null);
@@ -294,16 +350,15 @@ export class OverlayModel {
 
   setThreshold(value: number): void {
     this.confidenceThreshold.set(value);
-    this.spanStates.update((states) =>
-      states.map((s) =>
-        s.manualOverride
-          ? s
-          : {
-              ...s,
-              enabled: isApprovedByDefault(s.span, this.thresholdFor(s.span)),
-            },
-      ),
-    );
+    this.spanStates.update((states) => {
+      const approvals = defaultApprovals(
+        states.map((s) => s.span),
+        (span) => this.thresholdFor(span),
+      );
+      return states.map((s, i) =>
+        s.manualOverride ? s : { ...s, enabled: approvals[i] },
+      );
+    });
   }
 
   confirm(): PiiSpan[] {
