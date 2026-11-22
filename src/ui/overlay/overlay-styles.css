@@ -257,12 +257,16 @@
   flex-direction: column;
 }
 
+/* Every row has the same shape: the value on its own line across the full
+ * width, and its details (type, how often it appears, confidence) on a
+ * quieter line underneath. A long email or address then reads across the
+ * whole list, and short and long values line up the same way. */
 .pg-entity-row {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto 36px 24px;
-  align-items: center;
-  column-gap: 4px;
-  padding: 5px 4px;
+  grid-template-columns: 20px minmax(0, 1fr) 24px;
+  align-items: start;
+  column-gap: 8px;
+  padding: 9px 6px 8px;
   border-bottom: var(--border-hairline);
   font-size: 13px;
   transition: background 120ms ease;
@@ -308,6 +312,8 @@
 .pg-entity-checkbox {
   display: flex;
   align-items: center;
+  /* One line of the value tall, so the box sits beside its first line. */
+  height: 18px;
 }
 .pg-entity-checkbox input {
   appearance: none;
@@ -342,9 +348,9 @@
  * or IBAN cannot overflow the column. The clamp only guards against a
  * runaway span; the full text stays in the `title`. */
 .pg-entity-text {
-  flex: 1;
   font-family: var(--font-sans);
   font-size: 13px;
+  font-weight: 500;
   line-height: 1.35;
   color: var(--color-ink);
   overflow: hidden;
@@ -357,19 +363,31 @@
   min-width: 0;
 }
 
-.pg-entity-count {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--color-surface);
-  border: var(--border-hairline);
-  color: var(--color-muted);
+.pg-entity-main {
+  min-width: 0;
+}
+
+.pg-entity-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+/* Plain text beside the type, each set off by a middle dot. */
+.pg-entity-count,
+.pg-entity-score {
+  flex: none;
+  font-family: var(--font-sans);
   font-size: 11px;
-  font-weight: 600;
-  line-height: 1.5;
+  font-weight: 500;
+  color: var(--color-subtle);
   white-space: nowrap;
-  text-decoration: none;
+}
+.pg-entity-count::before,
+.pg-entity-score::before {
+  content: "\00b7";
+  margin-right: 8px;
 }
 
 .pg-entity-type {
@@ -379,12 +397,11 @@
   border: 0;
   color: var(--color-ink);
   border-radius: var(--radius-sm);
-  /* Each row is its own grid, so the type column would otherwise size
-   * to that row's specific content. Pin a min-width that comfortably
-   * fits the widest type label (CREDIT_CARD / WHITELISTED) so the
-   * column lines up visually across rows. */
-  min-width: 100px;
-  padding: 4px 24px 4px 10px;
+  /* Only as wide as the chosen type. A select otherwise takes the width of
+   * its longest option, which is most of a narrow list. */
+  field-sizing: content;
+  min-width: 0;
+  padding: 2px 20px 2px 8px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -393,7 +410,7 @@
   cursor: pointer;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'><path d='M2.5 4.5L6 8l3.5-3.5' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat: no-repeat;
-  background-position: right 7px center;
+  background-position: right 6px center;
   background-size: 10px 10px;
 }
 .pg-entity-type:focus-visible {
@@ -465,16 +482,9 @@
   letter-spacing: 0.2px;
 }
 
-.pg-entity-score {
-  font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-subtle);
-  min-width: 32px;
-  text-align: right;
-}
-
 .pg-entity-dismiss {
+  /* Lifts the glyph level with the first line of the value. */
+  margin-top: -3px;
   background: none;
   border: 0;
   color: var(--color-subtle);

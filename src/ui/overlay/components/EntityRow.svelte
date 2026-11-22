@@ -45,32 +45,39 @@
     </label>
   {/if}
 
-  <span class="pg-entity-text" title={state.span.text}>{state.span.text}{#if occurrences > 1}<span
-      class="pg-entity-count"
-      title={`Appears ${occurrences} times. Your choice applies to all of them.`}
-      aria-label={`appears ${occurrences} times`}>×{occurrences}</span>{/if}</span>
+  <div class="pg-entity-main">
+    <span class="pg-entity-text" title={state.span.text}>{state.span.text}</span>
 
-  {#if state.whitelisted}
-    <!-- Disabled select so the layout box is identical to the real
-         select in non-whitelisted rows (UA gives selects an intrinsic
-         min-width a span can't match). -->
-    <select class="pg-entity-type pg-entity-type-whitelisted" disabled aria-label="Whitelisted">
-      <option>whitelisted</option>
-    </select>
-  {:else}
-    <select
-      class="pg-entity-type pg-pill-{state.entityType.toLowerCase()}"
-      aria-label="Entity type"
-      value={state.entityType}
-      onchange={(e) => onRetype(index, e.currentTarget.value as EntityType)}
-    >
-      {#each ENTITY_TYPES as t (t)}
-        <option value={t}>{t}</option>
-      {/each}
-    </select>
-  {/if}
+    <div class="pg-entity-meta">
+      {#if state.whitelisted}
+        <!-- A disabled select, so the pill is the same box as the real
+             select in the other rows. -->
+        <select class="pg-entity-type pg-entity-type-whitelisted" disabled aria-label="Whitelisted">
+          <option>whitelisted</option>
+        </select>
+      {:else}
+        <select
+          class="pg-entity-type pg-pill-{state.entityType.toLowerCase()}"
+          aria-label="Entity type"
+          value={state.entityType}
+          onchange={(e) => onRetype(index, e.currentTarget.value as EntityType)}
+        >
+          {#each ENTITY_TYPES as t (t)}
+            <option value={t}>{t}</option>
+          {/each}
+        </select>
+      {/if}
 
-  <span class="pg-entity-score">{((score ?? state.span.score) * 100).toFixed(0)}%</span>
+      {#if occurrences > 1}
+        <span
+          class="pg-entity-count"
+          title="Your choice applies to every occurrence."
+        >{occurrences} times</span>
+      {/if}
+
+      <span class="pg-entity-score">{((score ?? state.span.score) * 100).toFixed(0)}%</span>
+    </div>
+  </div>
 
   {#if state.whitelisted}
     <span class="pg-entity-dismiss" aria-hidden="true"></span>
