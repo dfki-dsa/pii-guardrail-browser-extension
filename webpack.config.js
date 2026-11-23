@@ -80,6 +80,14 @@ module.exports = (_env = {}) => {
           parser: { url: false },
         },
         {
+          // Strip Transformers.js's remote defaults (jsdelivr wasmPaths,
+          // huggingface.co remoteHost). Chrome Web Store flags the CDN URL as
+          // remotely hosted code even though ner-provider.ts overrides it.
+          test: /transformers\.web(\.min)?\.js$/,
+          include: path.resolve(__dirname, 'node_modules/@huggingface/transformers'),
+          use: path.resolve(__dirname, 'scripts/strip-remote-defaults-loader.js'),
+        },
+        {
           test: /\.svelte$/,
           use: {
             loader: 'svelte-loader',

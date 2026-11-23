@@ -32,6 +32,7 @@
     "check:svelte": "svelte-check --tsconfig ./tsconfig.svelte.json",
     "check:permissions": "node scripts/check-extension-permissions.js",
     "check:privacy-boundary": "node scripts/check-privacy-boundary.js",
+    "check:remote-code": "node scripts/check-remote-code.js",
     "benchmark:openpii": "node scripts/run-openpii-benchmark.js",
     "benchmark:openpii:download": "node scripts/download-openpii-dataset.js",
     "benchmark:openpii:build": "node scripts/build-openpii-corpus.js",
