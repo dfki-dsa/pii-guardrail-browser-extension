@@ -13,12 +13,43 @@ export function isApprovedByDefault(span: PiiSpan, threshold: number): boolean {
   return !span.inCodeBlock && span.score >= threshold;
 }
 
+/**
+ * Identity of a value within one review. Spans with the same text and the
+ * same detected type are one decision for the user: the pop-up lists them
+ * once, and a choice made there applies to every occurrence. Spans inside a
+ * code block are kept apart, because they are listed and defaulted separately.
+ */
+export function reviewGroupKey(span: PiiSpan): string {
+  return `${span.inCodeBlock ? 'code' : 'text'}\u0000${span.entity_type}\u0000${span.text}`;
+}
+
+/**
+ * Default selection for each span, in order.
+ *
+ * A span is selected when it passes `isApprovedByDefault` itself, or when an
+ * identical value elsewhere in the text does. The same string must not be
+ * replaced in one place and left in clear in another only because the model
+ * was less sure about one occurrence.
+ */
+export function defaultApprovals(
+  spans: readonly PiiSpan[],
+  thresholdFor: (span: PiiSpan) => number,
+): boolean[] {
+  const own = spans.map((span) => isApprovedByDefault(span, thresholdFor(span)));
+  const approvedKeys = new Set<string>();
+  spans.forEach((span, i) => {
+    if (own[i]) approvedKeys.add(reviewGroupKey(span));
+  });
+  return spans.map((span, i) => own[i] || approvedKeys.has(reviewGroupKey(span)));
+}
+
 /** The spans the review pop-up would have pre-ticked, in their original order. */
 export function selectDefaultApproved(
   spans: readonly PiiSpan[],
   thresholdFor: (span: PiiSpan) => number,
 ): PiiSpan[] {
-  return spans.filter((span) => isApprovedByDefault(span, thresholdFor(span)));
+  const approvals = defaultApprovals(spans, thresholdFor);
+  return spans.filter((_, i) => approvals[i]);
 }
 
 /**

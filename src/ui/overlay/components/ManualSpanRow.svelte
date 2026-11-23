@@ -12,9 +12,13 @@
   <label class="pg-entity-checkbox">
     <input type="checkbox" checked disabled />
   </label>
-  <span class="pg-entity-text" title={span.text}>{span.text}</span>
-  <span class="pg-entity-type-label">{span.entity_type}</span>
-  <span class="pg-entity-score">manual</span>
+  <div class="pg-entity-main">
+    <span class="pg-entity-text" title={span.text}>{span.text}</span>
+    <div class="pg-entity-meta">
+      <span class="pg-entity-type-label">{span.entity_type}</span>
+      <span class="pg-entity-score">manual</span>
+    </div>
+  </div>
   <button
     type="button"
     class="pg-entity-dismiss"

@@ -160,3 +160,76 @@ describe('review pop-up: the main button', () => {
     expect(replaced.cb.onPasteOriginal).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('review pop-up: a value that appears more than once', () => {
+  const REPEATED = 'Ada met Ada, then Ada left Kiel';
+  const repeated: PiiSpan[] = [
+    { start: 0, end: 3, entity_type: 'PERSON', score: 0.99, text: 'Ada', source: 'ner' },
+    // The model was unsure about this occurrence of the same name.
+    { start: 8, end: 11, entity_type: 'PERSON', score: 0.3, text: 'Ada', source: 'ner' },
+    { start: 18, end: 21, entity_type: 'PERSON', score: 0.9, text: 'Ada', source: 'ner' },
+    { start: 27, end: 31, entity_type: 'LOCATION', score: 0.8, text: 'Kiel', source: 'ner' },
+  ];
+
+  function repeatedModel(cb = callbacks()) {
+    return { cb, m: new OverlayModel(REPEATED, repeated, cb, 0.5) };
+  }
+
+  it('lists it once and counts it once', () => {
+    const { m } = repeatedModel();
+    expect(get(m.mainIndices)).toEqual([0, 3]);
+    expect(get(m.totalCount)).toBe(2);
+    expect(get(m.enabledCount)).toBe(2);
+    expect(m.occurrences(0)).toBe(3);
+    expect(m.occurrences(3)).toBe(1);
+    expect(m.groupScore(0)).toBe(0.99);
+  });
+
+  it('ticks every occurrence when one of them is confident enough', () => {
+    const { m } = repeatedModel();
+    expect(get(m.spanStates).map((s) => s.enabled)).toEqual([true, true, true, true]);
+    expect(m.isBelowThreshold(get(m.spanStates)[0])).toBe(false);
+  });
+
+  it('applies one untick to every occurrence', () => {
+    const { m, cb } = repeatedModel();
+    m.toggle(0, false);
+    expect(get(m.spanStates).map((s) => s.enabled)).toEqual([false, false, false, true]);
+    m.confirm();
+    expect(cb.onConfirm.mock.calls[0][0].map((s: PiiSpan) => s.text)).toEqual(['Kiel']);
+  });
+
+  it('retypes every occurrence and reports the correction once', () => {
+    const { m, cb } = repeatedModel();
+    m.retype(0, 'ORGANIZATION');
+    expect(get(m.spanStates).map((s) => s.entityType)).toEqual([
+      'ORGANIZATION', 'ORGANIZATION', 'ORGANIZATION', 'LOCATION',
+    ]);
+    expect(cb.onFeedback).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses every occurrence as not personal data', () => {
+    const { m, cb } = repeatedModel();
+    m.openDismissMenu(0, { top: 0, right: 0, bottom: 0, left: 0 });
+    m.confirmDismiss('value');
+    expect(get(m.spanStates).slice(0, 3).every((s) => !s.enabled && s.whitelisted)).toBe(true);
+    expect(cb.onAddToAllowlist).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the same text under different types as separate rows', () => {
+    const mixed: PiiSpan[] = [
+      { start: 0, end: 3, entity_type: 'PERSON', score: 0.9, text: 'Ada', source: 'ner' },
+      { start: 8, end: 11, entity_type: 'ORGANIZATION', score: 0.9, text: 'Ada', source: 'ner' },
+    ];
+    const m = new OverlayModel(REPEATED, mixed, callbacks(), 0.5);
+    expect(get(m.mainIndices)).toEqual([0, 1]);
+  });
+
+  it('unticks the whole group only when the slider passes every occurrence', () => {
+    const { m } = repeatedModel();
+    m.setThreshold(0.95);
+    expect(get(m.spanStates).map((s) => s.enabled)).toEqual([true, true, true, false]);
+    m.setThreshold(1);
+    expect(get(m.spanStates).map((s) => s.enabled)).toEqual([false, false, false, false]);
+  });
+});
