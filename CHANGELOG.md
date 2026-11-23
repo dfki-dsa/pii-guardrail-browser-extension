@@ -4,6 +4,13 @@ All notable public changes to Privacy Guardrail will be documented in this file.
 
 The project follows public beta release notes for `0.x` versions.
 
+## [0.5.2] - Public Beta
+
+- The review pop-up now lists a value once when it appears several times in the same paste, marked with how many times it occurs. Previously each occurrence had its own row and you had to make the same decision for each one. Ticking, retyping or dismissing that row now applies to every occurrence, and the counts at the top of the review count rows, not occurrences. Only exact matches of the same type are grouped; spellings that differ in case or by a typo still get their own rows.
+- A repeated value is now selected by default if any of its occurrences is detected with enough confidence. This also applies to auto-mode, so the same text is no longer replaced in one place and left unchanged in another.
+- Each row in the review now shows the value on its own line across the full width, with its type, how often it occurs and the confidence underneath. Long values are no longer squeezed into a narrow column, and they can no longer hide the occurrence count.
+- Version 0.5.1 was not published on the Chrome Web Store. Its review flagged an unused fallback in a bundled library that pointed to code on an external server. Privacy Guardrail never loaded it, since all its code ships with the extension, but the reference is now removed from the package, and the release build fails if one shows up again. The changes listed under 0.5.1 reach Chrome Web Store users with this version.
+
 ## [0.5.1] - Public Beta
 
 - New optional **auto-mode**, off by default. You can switch it on in two places: **Auto-mode** in the review pop-up, or the **Auto-mode** toggle on the popup's Protect tab. With it on, personal data detected in a paste is replaced straight away instead of stopping at the review pop-up. What gets replaced is exactly what the review would have pre-selected. A notice then appears for a few seconds with **Undo**, which puts your original text back, and **Review**, which opens the review for that paste and applies what you confirm. Ignoring the notice keeps the replacement. The notice goes away by itself after a few seconds, and at once when you send the message or delete what was pasted. If something was detected but not replaced — a low-confidence item, or text in a code block you chose to skip — the notice says how many, so nothing detected passes unseen. Detection can still miss things, so read the message before sending it.
