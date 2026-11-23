@@ -71,6 +71,7 @@ function runCiValidation(options = {}) {
   runNpm('Privacy boundary check', ['run', 'check:privacy-boundary']);
   runNpm('Rust tests', ['run', 'test:rust']);
   runNpm('Model-free extension build', ['run', 'build:ext']);
+  runNpm('Remote code check', ['run', 'check:remote-code']);
 }
 
 function runReleaseStrictValidation(options = {}) {
@@ -85,6 +86,7 @@ function runReleaseStrictValidation(options = {}) {
   runNpm('Extension build with required BardsAI assets', ['run', 'build:ext'], {
     env: { NER_MODEL_ASSETS_REQUIRED: '1' },
   });
+  runNpm('Remote code check', ['run', 'check:remote-code']);
 }
 
 function main(argv = process.argv.slice(2)) {

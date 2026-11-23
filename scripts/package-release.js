@@ -12,6 +12,7 @@ const {
   modelAssetStatusMessage,
 } = require('./extension-packaging');
 const { checkVersion } = require('./version');
+const { assertNoRemoteCode } = require('./check-remote-code');
 
 const DEFAULT_VERSION = null;
 const RELEASE_DIR = 'release';
@@ -166,6 +167,8 @@ function listPackageEntries(distDir) {
   if (missingRequiredFiles.length > 0) {
     throw new Error(`Package contents must include required legal files: ${missingRequiredFiles.join(', ')}.`);
   }
+
+  assertNoRemoteCode(distDir, entries);
 
   return { entries, excluded };
 }
